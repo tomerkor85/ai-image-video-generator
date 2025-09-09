@@ -1,0 +1,11 @@
+{
+  "low_noise_lora": "https://d2p7pge43lyniu.cloudfront.net/output/a20502a5-7c99-4435-855b-820175f66acf-u2_t2v_A14B_separate_low_noise_lora_99dadaa1-5366-43e9-b2a6-1d4d88280a6f.safetensors",
+  "high_noise_lora": "https://d2p7pge43lyniu.cloudfront.net/output/a20502a5-7c99-4435-855b-820175f66acf-u2_t2v_A14B_separate_high_noise_lora_d63f22f3-9f57-4e01-94b4-96be5a853709.safetensors"
+}
+
+https://d2p7pge43lyniu.cloudfront.net/output/a20502a5-7c99-4435-855b-820175f66acf-u2_t2v_A14B_separate_low_noise_lora_99dadaa1-5366-43e9-b2a6-1d4d88280a6f.safetensors
+
+https://d2p7pge43lyniu.cloudfront.net/output/a20502a5-7c99-4435-855b-820175f66acf-u2_t2v_A14B_separate_high_noise_lora_d63f22f3-9f57-4e01-94b4-96be5a853709.safetensors
+
+
+fal: 1c79b42e-e896-4377-9c81-4a5952be423d:7064c406efac8560c1c2e78e88509c96
