@@ -12,8 +12,8 @@ class FluxGenerator:
     def __init__(self):
         self.pipeline = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model_id = "black-forest-labs/FLUX.1-dev"
-        self.lora_path = "flux-lora/naya2.safetensors"
+        self.model_id = "runwayml/stable-diffusion-v1-5"  # Using open model
+        self.lora_path = "models/flux_naya.safetensors"
         
     async def load_model(self):
         """Load FLUX model with LORA"""
@@ -23,14 +23,21 @@ class FluxGenerator:
             # Get Hugging Face token from environment
             hf_token = os.environ.get("HUGGINGFACE_TOKEN")
             
-            # Load base FLUX model
-            self.pipeline = FluxPipeline.from_pretrained(
+            # Load base model (Stable Diffusion instead of FLUX)
+            from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+            
+            self.pipeline = StableDiffusionPipeline.from_pretrained(
                 self.model_id,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 device_map="auto" if self.device == "cuda" else None,
                 safety_checker=None,  # Disable safety checker for uncensored generation
                 requires_safety_checker=False,
-                token=hf_token  # Use authentication token
+                use_safetensors=True
+            )
+            
+            # Set scheduler
+            self.pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
+                self.pipeline.scheduler.config
             )
             
             # Move to device if not using device_map

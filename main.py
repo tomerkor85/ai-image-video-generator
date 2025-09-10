@@ -1,4 +1,3 @@
-
 import os
 import torch
 from pathlib import Path
@@ -24,11 +23,11 @@ from wan_generator import WanGenerator
 # Import for model downloading
 try:
     from huggingface_hub import hf_hub_download
+
     HF_HUB_AVAILABLE = True
 except ImportError:
     HF_HUB_AVAILABLE = False
     print("⚠️ huggingface_hub not available, will use wget for downloads")
-
 
 # GPU Setup
 torch.cuda.empty_cache()
@@ -40,61 +39,33 @@ if torch.cuda.is_available():
     print(f"🎮 Total GPUs: {torch.cuda.device_count()}")
     for i in range(torch.cuda.device_count()):
         props = torch.cuda.get_device_properties(i)
-        print(f"   GPU {i}: {props.name} - {props.total_memory / 1024**3:.2f} GB")
+        print(f"   GPU {i}: {props.name} - {props.total_memory / 1024 ** 3:.2f} GB")
 else:
     device = "cpu"
     print("⚠️ No GPU detected, using CPU")
 
+
 def download_lora_models():
-    """Download LORA models from Hugging Face if not exists"""
+    """Check for LORA models and create directories if needed"""
     print("📥 Checking for LORA models...")
-    
+
     models = {
-        "naya_wan_lora/lora_t2v_A14B_separate_high.safetensors": 
-            "lora_t2v_A14B_separate_high.safetensors",
-        "naya_wan_lora/lora_t2v_A14B_separate_low.safetensors": 
-            "lora_t2v_A14B_separate_low.safetensors",
-        "flux-lora/naya2.safetensors": 
-            "naya2.safetensors"
+        "naya wan lora/lora_t2v_A14B_separate_high.safetensors": "High noise LORA for WAN",
+        "naya wan lora/lora_t2v_A14B_separate_low.safetensors": "Low noise LORA for WAN", 
+        "models/flux_naya.safetensors": "FLUX LORA for images"
     }
-    
-    for local_path, filename in models.items():
+
+    for local_path, description in models.items():
         # Create directory if not exists
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        
-        # Download only if file doesn't exist
-        if not os.path.exists(local_path):
-            print(f"📥 Downloading {local_path}...")
-            
-            try:
-                if HF_HUB_AVAILABLE:
-                    # Download with huggingface_hub
-                    downloaded_path = hf_hub_download(
-                        repo_id="tomerkor1985/test",
-                        filename=filename,
-                        cache_dir="./cache"
-                    )
-                    
-                    # Copy to correct location
-                    shutil.copy(downloaded_path, local_path)
-                    print(f"✅ Downloaded {local_path}")
-                else:
-                    # Fallback to wget
-                    import subprocess
-                    url = f"https://huggingface.co/tomerkor1985/test/resolve/main/{filename}"
-                    result = subprocess.run([
-                        "wget", "-c", "-O", local_path, url
-                    ], capture_output=True, text=True)
-                    
-                    if result.returncode == 0:
-                        print(f"✅ Downloaded {local_path}")
-                    else:
-                        print(f"❌ Failed to download {local_path}: {result.stderr}")
-                        
-            except Exception as e:
-                print(f"❌ Error downloading {local_path}: {e}")
+
+        # Check if file exists
+        if os.path.exists(local_path):
+            print(f"✅ {description}: {local_path}")
         else:
-            print(f"✅ {local_path} already exists")
+            print(f"❌ Missing {description}: {local_path}")
+            print(f"   Please ensure the LORA file exists at this location")
+
 
 # Download models at startup
 download_lora_models()
@@ -135,6 +106,7 @@ models = {}
 flux_generator = None
 wan_generator = None
 
+
 # Request Models
 class ImageRequest(BaseModel):
     prompt: str = Field(..., description="Text prompt")
@@ -146,6 +118,7 @@ class ImageRequest(BaseModel):
     seed: Optional[int] = Field(None)
     model_type: str = Field("flux", description="Model type: flux or stable-diffusion")
     lora_scale: float = Field(1.0, ge=0.0, le=2.0, description="LORA scale")
+
 
 class VideoRequest(BaseModel):
     prompt: str = Field(..., description="Text prompt")
@@ -159,37 +132,40 @@ class VideoRequest(BaseModel):
     lora_scale: float = Field(1.0, ge=0.0, le=2.0, description="LORA scale")
     lora_type: str = Field("high", description="LORA type: high or low noise")
 
+
 def get_flux_generator():
     """Get or create FLUX generator"""
     global flux_generator
-    
+
     if flux_generator is None:
         print("📥 Loading FLUX generator...")
         flux_generator = FluxGenerator()
         # Note: We'll load the model on first use to avoid blocking startup
-    
+
     return flux_generator
+
 
 def get_wan_generator():
     """Get or create WAN generator"""
     global wan_generator
-    
+
     if wan_generator is None:
         print("📥 Loading WAN generator...")
         wan_generator = WanGenerator()
         # Note: We'll load the model on first use to avoid blocking startup
-    
+
     return wan_generator
+
 
 def get_image_model(model_id: str = "runwayml/stable-diffusion-v1-5"):
     """Load or get cached image model (legacy support)"""
     global models
-    
+
     if model_id not in models:
         print(f"📥 Loading model: {model_id}")
         try:
             from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
-            
+
             pipe = StableDiffusionPipeline.from_pretrained(
                 model_id,
                 torch_dtype=torch.float16,
@@ -197,29 +173,30 @@ def get_image_model(model_id: str = "runwayml/stable-diffusion-v1-5"):
                 requires_safety_checker=False,
                 use_safetensors=True
             )
-            
+
             pipe.scheduler = DPMSolverMultistepScheduler.from_config(
                 pipe.scheduler.config
             )
-            
+
             pipe = pipe.to(device)
             pipe.enable_attention_slicing()
-            
+
             # Try to enable xformers
             try:
                 pipe.enable_xformers_memory_efficient_attention()
                 print("✅ XFormers enabled")
             except:
                 print("ℹ️ XFormers not available, using default attention")
-            
+
             models[model_id] = pipe
             print(f"✅ Model loaded successfully")
-            
+
         except Exception as e:
             print(f"❌ Error loading model: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
-    
+
     return models[model_id]
+
 
 @app.get("/")
 async def root():
@@ -230,9 +207,9 @@ async def root():
         "gpu": {
             "available": torch.cuda.is_available(),
             "count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
-            "devices": [torch.cuda.get_device_name(i) 
-                       for i in range(torch.cuda.device_count())] 
-                       if torch.cuda.is_available() else []
+            "devices": [torch.cuda.get_device_name(i)
+                        for i in range(torch.cuda.device_count())]
+            if torch.cuda.is_available() else []
         },
         "endpoints": {
             "/": "This info",
@@ -245,6 +222,7 @@ async def root():
         }
     }
 
+
 @app.get("/health")
 async def health():
     """Health check"""
@@ -255,20 +233,21 @@ async def health():
         "timestamp": datetime.now().isoformat()
     }
 
+
 @app.post("/generate/image")
 async def generate_image(req: ImageRequest):
     """Generate image from prompt"""
     try:
         print(f"🎨 Generating: {req.prompt[:50]}...")
-        
+
         if req.model_type == "flux":
             # Use FLUX generator
             generator = get_flux_generator()
-            
+
             # Load model if not already loaded
             if generator.pipeline is None:
                 await generator.load_model()
-            
+
             # Generate image
             image = await generator.generate(
                 prompt=req.prompt,
@@ -280,16 +259,16 @@ async def generate_image(req: ImageRequest):
                 seed=req.seed,
                 lora_scale=req.lora_scale
             )
-            
+
         else:
             # Use legacy Stable Diffusion
             pipe = get_image_model()
-            
+
             # Setup generator
             generator = None
             if req.seed is not None:
                 generator = torch.Generator(device=device).manual_seed(req.seed)
-            
+
             # Generate
             with torch.inference_mode():
                 result = pipe(
@@ -301,20 +280,20 @@ async def generate_image(req: ImageRequest):
                     guidance_scale=req.guidance,
                     generator=generator
                 )
-            
+
             image = result.images[0]
-        
+
         # Save
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"img_{timestamp}.png"
         filepath = OUTPUT_DIR / "images" / filename
-        
+
         image.save(filepath)
         print(f"✅ Saved: {filename}")
-        
+
         # Cleanup
         torch.cuda.empty_cache()
-        
+
         return {
             "success": True,
             "filename": filename,
@@ -322,24 +301,25 @@ async def generate_image(req: ImageRequest):
             "url": f"/outputs/images/{filename}",
             "model_type": req.model_type
         }
-        
+
     except Exception as e:
         print(f"❌ Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/generate/video")
 async def generate_video(req: VideoRequest):
     """Generate video from prompt"""
     try:
         print(f"🎬 Generating video: {req.prompt[:50]}...")
-        
+
         # Use WAN generator
         generator = get_wan_generator()
-        
+
         # Load model if not already loaded
         if generator.pipeline is None:
             await generator.load_model(lora_type=req.lora_type)
-        
+
         # Generate video frames
         frames = await generator.generate(
             prompt=req.prompt,
@@ -352,20 +332,20 @@ async def generate_video(req: VideoRequest):
             seed=req.seed,
             lora_scale=req.lora_scale
         )
-        
+
         # Convert frames to video
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"vid_{timestamp}.mp4"
         filepath = OUTPUT_DIR / "videos" / filename
-        
+
         # Create video from frames
         video_path = await frames_to_video(frames, filepath, fps=8)
-        
+
         print(f"✅ Video saved: {filename}")
-        
+
         # Cleanup
         torch.cuda.empty_cache()
-        
+
         return {
             "success": True,
             "filename": filename,
@@ -373,10 +353,11 @@ async def generate_video(req: VideoRequest):
             "url": f"/outputs/videos/{filename}",
             "num_frames": len(frames)
         }
-        
+
     except Exception as e:
         print(f"❌ Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 async def frames_to_video(frames: List[Image.Image], output_path: Path, fps: int = 8) -> str:
     """Convert PIL frames to MP4 video"""
@@ -390,37 +371,39 @@ async def frames_to_video(frames: List[Image.Image], output_path: Path, fps: int
             if len(frame_array.shape) == 3:
                 frame_array = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
             frame_arrays.append(frame_array)
-        
+
         # Get video dimensions
         height, width = frame_arrays[0].shape[:2]
-        
+
         # Create video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         video_writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
-        
+
         # Write frames
         for frame_array in frame_arrays:
             video_writer.write(frame_array)
-        
+
         # Release video writer
         video_writer.release()
-        
+
         return str(output_path)
-        
+
     except Exception as e:
         print(f"❌ Error creating video: {e}")
         raise e
+
 
 @app.get("/outputs")
 async def list_outputs():
     """List generated files"""
     images = list((OUTPUT_DIR / "images").glob("*.png"))
     videos = list((OUTPUT_DIR / "videos").glob("*.mp4"))
-    
+
     return {
         "images": [f.name for f in sorted(images, reverse=True)[:20]],
         "videos": [f.name for f in sorted(videos, reverse=True)[:20]]
     }
+
 
 @app.get("/outputs/images/{filename}")
 async def get_image(filename: str):
@@ -430,6 +413,7 @@ async def get_image(filename: str):
         raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(filepath)
 
+
 @app.get("/outputs/videos/{filename}")
 async def get_video(filename: str):
     """Get generated video"""
@@ -437,6 +421,7 @@ async def get_video(filename: str):
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(filepath)
+
 
 @app.get("/ui", response_class=HTMLResponse)
 async def serve_ui():
@@ -599,7 +584,7 @@ async def serve_ui():
                 <div class="form-group">
                     <label>Model Type:</label>
                     <select id="model_type">
-                        <option value="flux" selected>🚀 FLUX.1-dev (with LORA)</option>
+                        <option value="flux" selected>🚀 Stable Diffusion (with LORA)</option>
                         <option value="stable-diffusion">🎯 Stable Diffusion</option>
                     </select>
                 </div>
@@ -826,13 +811,14 @@ async def serve_ui():
     '''
     return html_content
 
+
 if __name__ == "__main__":
-    print("="*60)
+    print("=" * 60)
     print("🚀 AI Image Generator Server")
-    print("="*60)
+    print("=" * 60)
     print(f"📍 URL: http://0.0.0.0:8000")
     print(f"📚 API Docs: http://0.0.0.0:8000/docs")
     print(f"🎨 Web UI: http://0.0.0.0:8000/ui")
-    print("="*60)
-    
+    print("=" * 60)
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
