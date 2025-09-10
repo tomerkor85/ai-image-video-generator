@@ -51,7 +51,7 @@ docker run --gpus all -d \
   -v $(pwd)/outputs:/app/outputs \
   -v $(pwd)/temp:/app/temp \
   -v $(pwd)/flux-lora:/app/flux-lora \
-  -v "$(pwd)/naya wan lora":/app/naya\ wan\ lora \
+  -v "$(pwd)/naya_wan_lora":/app/naya\ wan\ lora \
   ai-generator
 
 # Wait for service to start

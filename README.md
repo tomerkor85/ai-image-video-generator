@@ -25,7 +25,6 @@
 ```bash
 # Clone the repository
 git clone <your-repo-url>
-cd naya
 
 # Create virtual environment
 python -m venv venv
@@ -41,7 +40,7 @@ pip install -r requirements.txt
 
 ודא שקבצי ה-LORA נמצאים במיקומים הנכונים:
 - `flux-lora/naya2.safetensors`
-- `naya wan lora/high_lora.safetensors`
+- `naya_wan_lora/high_lora.safetensors`
 
 ### 3. הרצת השרת
 
@@ -182,7 +181,7 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 ```bash
 # Check LORA file paths
 ls -la flux-lora/
-ls -la "naya wan lora/"
+ls -la "naya_wan_lora/"
 ```
 
 ### שגיאות CUDA

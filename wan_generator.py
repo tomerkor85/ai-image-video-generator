@@ -14,9 +14,10 @@ class WanGenerator:
         self.pipeline = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model_id = "stabilityai/stable-video-diffusion-img2vid-xt"
-        self.lora_path = "naya wan lora/high_lora.safetensors"
+        self.lora_high_path = "naya_wan_lora/lora_t2v_A14B_separate_high.safetensors"
+        self.lora_low_path = "naya_wan_lora/lora_t2v_A14B_separate_low.safetensors"
         
-    async def load_model(self):
+    async def load_model(self, lora_type: str = "high"):
         """Load WAN model with LORA"""
         try:
             logger.info(f"Loading WAN model on {self.device}")
@@ -34,13 +35,33 @@ class WanGenerator:
             if self.device != "cuda" or not torch.cuda.is_available():
                 self.pipeline = self.pipeline.to(self.device)
             
-            # Load LORA if exists
-            if os.path.exists(self.lora_path):
-                logger.info(f"Loading LORA from {self.lora_path}")
-                self.pipeline.load_lora_weights(self.lora_path)
-                logger.info("LORA loaded successfully")
+            # Load LORA based on type
+            lora_loaded = False
+            if lora_type == "high" and os.path.exists(self.lora_high_path):
+                logger.info(f"Loading HIGH noise LORA from {self.lora_high_path}")
+                self.pipeline.load_lora_weights(self.lora_high_path)
+                logger.info("HIGH noise LORA loaded successfully")
+                lora_loaded = True
+            elif lora_type == "low" and os.path.exists(self.lora_low_path):
+                logger.info(f"Loading LOW noise LORA from {self.lora_low_path}")
+                self.pipeline.load_lora_weights(self.lora_low_path)
+                logger.info("LOW noise LORA loaded successfully")
+                lora_loaded = True
             else:
-                logger.warning(f"LORA file not found at {self.lora_path}")
+                # Fallback: try to load any available LORA
+                if os.path.exists(self.lora_high_path):
+                    logger.info(f"Fallback: Loading HIGH noise LORA from {self.lora_high_path}")
+                    self.pipeline.load_lora_weights(self.lora_high_path)
+                    logger.info("HIGH noise LORA loaded successfully")
+                    lora_loaded = True
+                elif os.path.exists(self.lora_low_path):
+                    logger.info(f"Fallback: Loading LOW noise LORA from {self.lora_low_path}")
+                    self.pipeline.load_lora_weights(self.lora_low_path)
+                    logger.info("LOW noise LORA loaded successfully")
+                    lora_loaded = True
+            
+            if not lora_loaded:
+                logger.warning(f"No LORA files found at {self.lora_high_path} or {self.lora_low_path}")
             
             # Enable memory efficient attention
             self.pipeline.enable_attention_slicing()

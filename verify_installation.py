@@ -80,7 +80,7 @@ def main():
     print_section("📁 Directory Structure")
     dirs = {
         "flux-lora": "FLUX LORA models",
-        "naya wan lora": "WAN LORA models",
+        "naya_wan_lora": "WAN LORA models",
         "outputs": "Output files",
         "cache": "Model cache",
         "models": "Base models"
@@ -98,7 +98,7 @@ def main():
     print_section("📄 Model Files")
     model_files = [
         ("flux-lora/naya2.safetensors", "FLUX LORA"),
-        ("naya wan lora/high_lora.safetensors", "WAN LORA")
+        ("naya_wan_lora/high_lora.safetensors", "WAN LORA")
     ]
     
     for file_path, description in model_files:

@@ -58,7 +58,7 @@ pip install omegaconf
 # Create necessary directories
 echo "📁 Creating directories..."
 mkdir -p "flux-lora"
-mkdir -p "naya wan lora"
+mkdir -p "naya_wan_lora"
 mkdir -p outputs
 mkdir -p cache
 mkdir -p models

@@ -181,8 +181,8 @@ if [ -d "/opt/ai-generator/flux-lora" ]; then
     tar -czf $BACKUP_DIR/flux_lora_$DATE.tar.gz -C /opt/ai-generator flux-lora/
 fi
 
-if [ -d "/opt/ai-generator/naya wan lora" ]; then
-    tar -czf $BACKUP_DIR/wan_lora_$DATE.tar.gz -C /opt/ai-generator "naya wan lora/"
+if [ -d "/opt/ai-generator/naya_wan_lora" ]; then
+    tar -czf $BACKUP_DIR/wan_lora_$DATE.tar.gz -C /opt/ai-generator "naya_wan_lora/"
 fi
 
 # Clean old backups (keep last 7 days)

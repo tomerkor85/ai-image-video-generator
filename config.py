@@ -9,8 +9,9 @@ class Config:
     WAN_MODEL_ID = "stabilityai/stable-video-diffusion-img2vid-xt"
     
     # LORA paths
-    FLUX_LORA_PATH = "flux-lora/naya2.safetensors"
-    WAN_LORA_PATH = "naya wan lora/high_lora.safetensors"
+    FLUX_LORA_PATH = "models/flux_naya.safetensors"
+    WAN_LORA_HIGH_PATH = "naya_wan_lora/lora_t2v_A14B_separate_high.safetensors"
+    WAN_LORA_LOW_PATH = "naya_wan_lora/lora_t2v_A14B_separate_low.safetensors"
     
     # Device configuration
     DEVICE = "cuda" if os.environ.get("CUDA_AVAILABLE", "true").lower() == "true" else "cpu"
@@ -62,7 +63,8 @@ class Config:
         elif model_type == "wan":
             base_config.update({
                 "model_id": cls.WAN_MODEL_ID,
-                "lora_path": cls.WAN_LORA_PATH,
+                "lora_high_path": cls.WAN_LORA_HIGH_PATH,
+                "lora_low_path": cls.WAN_LORA_LOW_PATH,
             })
         
         return base_config

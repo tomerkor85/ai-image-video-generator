@@ -70,7 +70,7 @@ chmod +x runpod_deploy.sh
 ```bash
 # העלה את קבצי ה-LORA שלך
 scp -r "flux-lora/" root@YOUR_SERVER_IP:/root/ai-image-video-generator/
-scp -r "naya wan lora/" root@YOUR_SERVER_IP:/root/ai-image-video-generator/
+scp -r "naya_wan_lora/" root@YOUR_SERVER_IP:/root/ai-image-video-generator/
 ```
 
 ## שלב 4: פריסה על AWS EC2
@@ -171,7 +171,7 @@ docker logs ai-generator
 ### 7.2 גיבוי
 ```bash
 # גבה את המודלים
-tar -czf models_backup.tar.gz flux-lora/ "naya wan lora/"
+tar -czf models_backup.tar.gz flux-lora/ "naya_wan_lora/"
 
 # גבה את הפלטים
 tar -czf outputs_backup.tar.gz outputs/

@@ -12,7 +12,7 @@ services:
       - ./outputs:/app/outputs
       - ./temp:/app/temp
       - ./flux-lora:/app/flux-lora
-      - ./naya wan lora:/app/naya wan lora
+      - ./naya_wan_lora:/app/naya_wan_lora
     deploy:
       resources:
         reservations:
