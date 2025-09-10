@@ -8,7 +8,7 @@ import os
 import cv2
 
 logger = logging.getLogger(__name__)
-
+ 
 class WanGenerator:
     def __init__(self):
         self.pipeline = None
