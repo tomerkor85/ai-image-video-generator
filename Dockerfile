@@ -35,12 +35,10 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional dependencies for uncensored generation
+# Install additional dependencies for uncensored generation (optional)
 RUN pip install --no-cache-dir \
-    xformers \
     bitsandbytes \
-    peft \
-    safetensors
+    peft || echo "Some optional packages failed to install, continuing..."
 
 # Copy application code
 COPY . .

@@ -772,9 +772,9 @@ if __name__ == "__main__":
     print("="*60)
     print("🚀 AI Image Generator Server")
     print("="*60)
-    print(f"📍 URL: http://0.0.0.0:8888")
-    print(f"📚 API Docs: http://0.0.0.0:8888/docs")
-    print(f"🎨 Web UI: http://0.0.0.0:8888/ui")
+    print(f"📍 URL: http://0.0.0.0:8000")
+    print(f"📚 API Docs: http://0.0.0.0:8000/docs")
+    print(f"🎨 Web UI: http://0.0.0.0:8000/ui")
     print("="*60)
     
-    uvicorn.run(app, host="0.0.0.0", port=8888)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
