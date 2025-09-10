@@ -1,9 +1,9 @@
 import torch
 import logging
-from diffusers import FluxPipeline, FluxInpaintPipeline
+from diffusers import FluxPipeline
 from PIL import Image
 import numpy as np
-from typing import Optional, Union
+from typing import Optional
 import os
 
 logger = logging.getLogger(__name__)
