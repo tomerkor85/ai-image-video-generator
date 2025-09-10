@@ -33,7 +33,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
 # Install additional dependencies for uncensored generation (optional)
 RUN pip install --no-cache-dir \
