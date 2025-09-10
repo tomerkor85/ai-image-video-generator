@@ -1,11 +1,6 @@
-#!/usr/bin/env python3
-"""
-AI Image & Video Generator Server - Fixed Version
-"""
 
 import os
 import torch
-import gc
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
@@ -24,7 +19,6 @@ import cv2
 # Import our custom generators
 from flux_generator import FluxGenerator
 from wan_generator import WanGenerator
-from config import Config
 
 # GPU Setup
 torch.cuda.empty_cache()
