@@ -26,14 +26,12 @@ class WanGenerator:
             self.pipeline = StableVideoDiffusionPipeline.from_pretrained(
                 self.model_id,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                device_map="balanced" if self.device == "cuda" else None,
                 safety_checker=None,  # Disable safety checker for uncensored generation
                 requires_safety_checker=False
             )
             
-            # Move to device if not using device_map
-            if self.device != "cuda" or not torch.cuda.is_available():
-                self.pipeline = self.pipeline.to(self.device)
+            # Move to device
+            self.pipeline = self.pipeline.to(self.device)
             
             # Load LORA based on type
             lora_loaded = False
