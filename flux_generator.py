@@ -25,6 +25,9 @@ class FluxGenerator:
             
             # Get Hugging Face token
             hf_token = os.environ.get("HUGGINGFACE_TOKEN")
+            print(f"🔑 Hugging Face Token: {'✅ Found' if hf_token else '❌ Not found'}")
+            if hf_token:
+                print(f"🔑 Token length: {len(hf_token)}")
             
             self.pipeline = FluxPipeline.from_pretrained(
                 self.model_id,
