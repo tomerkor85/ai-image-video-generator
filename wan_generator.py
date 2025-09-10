@@ -14,8 +14,8 @@ class WanGenerator:
         self.pipeline = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model_id = "stabilityai/stable-video-diffusion-img2vid-xt"
-        self.lora_high_path = "naya wan lora/lora_t2v_A14B_separate_high.safetensors"
-        self.lora_low_path = "naya wan lora/lora_t2v_A14B_separate_low.safetensors"
+        self.lora_high_path = "models/lora_t2v_A14B_separate_high.safetensors"
+        self.lora_low_path = "models/lora_t2v_A14B_separate_low.safetensors"
         
     async def load_model(self, lora_type: str = "high"):
         """Load WAN model with LORA"""

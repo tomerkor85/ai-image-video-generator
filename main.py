@@ -46,25 +46,47 @@ else:
 
 
 def download_lora_models():
-    """Check for LORA models and create directories if needed"""
-    print("📥 Checking for LORA models...")
+    """Download LORA models from Hugging Face to models directory"""
+    print("📥 Checking and downloading LORA models...")
 
     models = {
-        "naya wan lora/lora_t2v_A14B_separate_high.safetensors": "High noise LORA for WAN",
-        "naya wan lora/lora_t2v_A14B_separate_low.safetensors": "Low noise LORA for WAN", 
-        "models/flux_naya.safetensors": "FLUX LORA for images"
+        "models/lora_t2v_A14B_separate_high.safetensors": {
+            "url": "https://huggingface.co/tomerkor1985/test/resolve/main/lora_t2v_A14B_separate_high.safetensors",
+            "description": "High noise LORA for WAN"
+        },
+        "models/lora_t2v_A14B_separate_low.safetensors": {
+            "url": "https://huggingface.co/tomerkor1985/test/resolve/main/lora_t2v_A14B_separate_low.safetensors", 
+            "description": "Low noise LORA for WAN"
+        },
+        "models/naya2.safetensors": {
+            "url": "https://huggingface.co/tomerkor1985/test/resolve/main/naya2.safetensors",
+            "description": "FLUX LORA for images"
+        }
     }
 
-    for local_path, description in models.items():
-        # Create directory if not exists
-        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    # Create models directory
+    os.makedirs("models", exist_ok=True)
 
-        # Check if file exists
+    for local_path, info in models.items():
         if os.path.exists(local_path):
-            print(f"✅ {description}: {local_path}")
+            print(f"✅ {info['description']}: {local_path}")
         else:
-            print(f"❌ Missing {description}: {local_path}")
-            print(f"   Please ensure the LORA file exists at this location")
+            print(f"📥 Downloading {info['description']}...")
+            try:
+                import requests
+                
+                response = requests.get(info['url'], stream=True)
+                response.raise_for_status()
+                
+                with open(local_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                
+                print(f"✅ Downloaded {info['description']}: {local_path}")
+                
+            except Exception as e:
+                print(f"❌ Failed to download {info['description']}: {e}")
+                print(f"   URL: {info['url']}")
 
 
 # Download models at startup
