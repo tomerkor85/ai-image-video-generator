@@ -1,36 +1,28 @@
-# Core Dependencies
-torch>=2.0.0
-torchvision>=0.15.0
-torchaudio>=2.0.0
-numpy>=1.24.0
+# Core ML Libraries - Fixed Versions
+torch==2.1.0
+torchvision==0.16.0
+torchaudio==2.1.0
+transformers==4.36.0
+diffusers==0.25.0
+accelerate==0.25.0
+safetensors==0.4.1
+xformers==0.0.23
 
-# Diffusers & AI Models
-diffusers>=0.25.0
-transformers>=4.35.0
-accelerate>=0.25.0
-safetensors>=0.4.0
-huggingface-hub>=0.20.0
+# Image/Video Processing
+Pillow==10.1.0
+opencv-python==4.8.1.78
+imageio==2.33.1
+imageio-ffmpeg==0.4.9
 
-# Memory Optimization (optional - skip if conflicts)
-# xformers>=0.0.20
-
-# Web Framework
-fastapi>=0.100.0
-uvicorn[standard]>=0.25.0
-python-multipart>=0.0.6
-
-# Image Processing
-Pillow>=10.0.0
-opencv-python>=4.8.0
-imageio>=2.30.0
-imageio-ffmpeg>=0.4.0
+# API Framework
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
 
 # Utilities
-scipy>=1.10.0
-omegaconf>=2.3.0
-psutil>=5.9.0
-
-# Optional - for advanced features
-# sentencepiece==0.1.99  # For some text models
-# ftfy==6.1.3  # Text cleaning
-# beautifulsoup4==4.12.3  # HTML processing
+numpy==1.24.3
+scipy==1.11.4
+tqdm==4.66.1
+huggingface-hub==0.19.4
+omegaconf==2.3.0
+einops==0.7.0
