@@ -12,7 +12,7 @@ class FluxGenerator:
     def __init__(self):
         self.pipeline = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model_id = "runwayml/stable-diffusion-v1-5"  # Using open model
+        self.model_id = "black-forest-labs/FLUX.1-dev"  # Using open model
         self.lora_path = "models/naya2.safetensors"
         
     async def load_model(self):
@@ -20,23 +20,18 @@ class FluxGenerator:
         try:
             logger.info(f"Loading FLUX model on {self.device}")
             
-            # Get Hugging Face token from environment
+            # Load FLUX model
+            from diffusers import FluxPipeline
+            
+            # Get Hugging Face token
             hf_token = os.environ.get("HUGGINGFACE_TOKEN")
             
-            # Load base model (Stable Diffusion instead of FLUX)
-            from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
-            
-            self.pipeline = StableDiffusionPipeline.from_pretrained(
+            self.pipeline = FluxPipeline.from_pretrained(
                 self.model_id,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                token=hf_token,
                 safety_checker=None,  # Disable safety checker for uncensored generation
-                requires_safety_checker=False,
-                use_safetensors=True
-            )
-            
-            # Set scheduler
-            self.pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
-                self.pipeline.scheduler.config
+                requires_safety_checker=False
             )
             
             # Move to device
@@ -49,6 +44,7 @@ class FluxGenerator:
                 logger.info("LORA loaded successfully")
             else:
                 logger.warning(f"LORA file not found at {self.lora_path}")
+                logger.info("Continuing without LORA...")
             
             # Enable memory efficient attention
             self.pipeline.enable_attention_slicing()

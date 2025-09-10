@@ -606,7 +606,7 @@ async def serve_ui():
                 <div class="form-group">
                     <label>Model Type:</label>
                     <select id="model_type">
-                        <option value="flux" selected>🚀 Stable Diffusion (with LORA)</option>
+                        <option value="flux" selected>🚀 FLUX 1.0 Dev (with LORA)</option>
                         <option value="stable-diffusion">🎯 Stable Diffusion</option>
                     </select>
                 </div>
