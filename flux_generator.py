@@ -13,7 +13,7 @@ class FluxGenerator:
         self.pipeline = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model_id = "black-forest-labs/FLUX.1-dev"
-        self.lora_path = "models/flux_naya.safetensors"
+        self.lora_path = "flux-lora/naya2.safetensors"
         
     async def load_model(self):
         """Load FLUX model with LORA"""

@@ -1,201 +1,149 @@
-# AI Image & Video Generation System
+# AI Image & Video Generator
 
-מערכת ליצירת תמונות ווידאו ב-AI עם FLUX 1 DEV LORA ו-WAN2.2 LORA ללא צנזורה.
+🚀 AI-powered image and video generation using FLUX.1-dev and Stable Video Diffusion with custom LORA models.
 
-## תכונות
+## Features
 
-- **יצירת תמונות**: FLUX 1 DEV עם LORA מותאם אישית
-- **יצירת וידאו**: WAN 2.2 עם LORA מותאם אישית  
-- **ללא צנזורה**: 100% חופש אומנותי
-- **API RESTful**: ממשק API מלא עם FastAPI
-- **תמיכה ב-GPU**: אופטימיזציה מלאה ל-CUDA
-- **Docker**: פריסה קלה על שרתים חיצוניים
+- 🎨 **Image Generation**: High-quality images using FLUX.1-dev with custom LORA
+- 🎬 **Video Generation**: Text-to-video using Stable Video Diffusion with custom LORA
+- 🌐 **Web Interface**: Beautiful web UI for easy generation
+- 🔧 **API**: RESTful API for programmatic access
+- 📱 **Responsive**: Works on desktop and mobile
 
-## דרישות מערכת
+## Installation
 
-- **GPU**: NVIDIA GPU עם CUDA 11.8+
-- **זיכרון**: 16GB+ RAM, 8GB+ VRAM
-- **מקום אחסון**: 50GB+ מקום פנוי
-- **מערכת הפעלה**: Ubuntu 22.04+ או Windows עם WSL2
+### Automatic Model Download
+The LORA models will be downloaded automatically on first run from:
+- [High LORA](https://huggingface.co/tomerkor1985/test/resolve/main/lora_t2v_A14B_separate_high.safetensors)
+- [Low LORA](https://huggingface.co/tomerkor1985/test/resolve/main/lora_t2v_A14B_separate_low.safetensors)
+- [Flux LORA](https://huggingface.co/tomerkor1985/test/resolve/main/naya2.safetensors)
 
-## התקנה מקומית
-
-### 1. הכנת הסביבה
-
+### Manual Download
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# או
-venv\Scripts\activate  # Windows
-
-# Install dependencies
-pip install -r requirements.txt
+# Download models manually
+bash download_models.sh
 ```
 
-### 2. הכנת קבצי LORA
-
-ודא שקבצי ה-LORA נמצאים במיקומים הנכונים:
-- `flux-lora/naya2.safetensors`
-- `naya_wan_lora/high_lora.safetensors`
-
-### 3. הרצת השרת
-
+### Python Setup
 ```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the server
 python main.py
 ```
 
-השרת יהיה זמין ב: `http://localhost:8000`
+## Usage
 
-## פריסה על שרת חיצוני (RUNPOD/AWS/GCP)
+### Web Interface
+1. Start the server: `python main.py`
+2. Open your browser: `http://localhost:8000/ui`
+3. Enter your prompt and generate!
 
-### 1. הכנת השרת
+### API Usage
 
+#### Generate Image
 ```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
-
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-
-# Install NVIDIA Container Toolkit
-distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-
-sudo apt-get update && sudo apt-get install -y nvidia-docker2
-sudo systemctl restart docker
-```
-
-### 2. העלאת הפרויקט
-
-```bash
-# Upload your project files to the server
-scp -r . user@server-ip:/path/to/project
-```
-
-### 3. בניית והרצת Docker
-
-```bash
-cd /path/to/project
-
-# Build the image
-docker build -t ai-generator .
-
-# Run with GPU support
-docker run --gpus all -p 8000:8000 -v $(pwd)/outputs:/app/outputs ai-generator
-```
-
-### 4. עם Docker Compose
-
-```bash
-docker-compose up -d
-```
-
-## שימוש ב-API
-
-### יצירת תמונה
-
-```bash
-curl -X POST "http://your-server:8000/generate/image" \
+curl -X POST "http://localhost:8000/generate/image" \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "beautiful landscape, detailed, high quality",
+    "prompt": "a beautiful sunset over mountains, highly detailed digital art",
     "negative_prompt": "blurry, low quality",
     "width": 1024,
     "height": 1024,
-    "num_inference_steps": 20,
-    "guidance_scale": 7.5,
-    "seed": 42
+    "steps": 25,
+    "guidance": 7.5,
+    "model_type": "flux",
+    "lora_scale": 1.0
   }'
 ```
 
-### יצירת וידאו
-
+#### Generate Video
 ```bash
-curl -X POST "http://your-server:8000/generate/video" \
+curl -X POST "http://localhost:8000/generate/video" \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "dancing person, smooth motion",
-    "negative_prompt": "jumpy, unstable",
+    "prompt": "a cat playing with a ball",
+    "negative_prompt": "blurry, low quality",
     "width": 512,
     "height": 512,
     "num_frames": 16,
-    "num_inference_steps": 25,
-    "guidance_scale": 7.5,
-    "seed": 42
+    "steps": 25,
+    "guidance": 7.5,
+    "lora_scale": 1.0,
+    "lora_type": "high"
   }'
 ```
 
-### בדיקת סטטוס
+## API Endpoints
+
+- `GET /` - API information
+- `GET /health` - Health check
+- `POST /generate/image` - Generate image
+- `POST /generate/video` - Generate video
+- `GET /ui` - Web interface
+- `GET /outputs` - List generated files
+- `GET /docs` - API documentation
+
+## Models
+
+### FLUX.1-dev
+- **Model**: `black-forest-labs/FLUX.1-dev`
+- **LORA**: Custom Naya LORA for enhanced generation
+- **Use Case**: High-quality image generation
+
+### Stable Video Diffusion
+- **Model**: `stabilityai/stable-video-diffusion-img2vid-xt`
+- **LORA**: Custom Naya WAN LORA (High/Low noise variants)
+- **Use Case**: Text-to-video generation
+
+## Configuration
+
+### Environment Variables
+```bash
+# Optional: Hugging Face token for private models
+export HUGGINGFACE_TOKEN="your_token_here"
+
+# Cache directory
+export HF_HOME="/workspace/cache"
+export TRANSFORMERS_CACHE="/workspace/cache"
+export DIFFUSERS_CACHE="/workspace/cache"
+```
+
+### GPU Requirements
+- **Minimum**: 8GB VRAM
+- **Recommended**: 16GB+ VRAM
+- **CUDA**: Required for GPU acceleration
+
+## Docker Support
 
 ```bash
-curl http://your-server:8000/health
+# Build and run with Docker
+docker-compose up --build
 ```
 
-## הגדרות ללא צנזורה
+## Troubleshooting
 
-המערכת מוגדרת מראש ללא צנזורה:
-
-- `safety_checker=None`
-- `requires_safety_checker=False`
-- אין סינון תוכן
-- חופש אומנותי מלא
-
-## אופטימיזציה
-
-### זיכרון GPU
-
-```python
-# Enable memory optimizations
-pipeline.enable_attention_slicing()
-pipeline.enable_model_cpu_offload()
-pipeline.enable_memory_efficient_attention()
-```
-
-### Batch Processing
-
-```python
-# Process multiple requests
-async def batch_generate(requests):
-    tasks = [generate_image(req) for req in requests]
-    return await asyncio.gather(*tasks)
-```
-
-## פתרון בעיות
-
-### שגיאות זיכרון
-
+### Model Download Issues
+If automatic download fails, try manual download:
 ```bash
-# Reduce batch size
-export CUDA_VISIBLE_DEVICES=0
-export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+bash download_models.sh
 ```
 
-### שגיאות LORA
+### Memory Issues
+- Reduce image/video dimensions
+- Lower number of inference steps
+- Use CPU offloading (enabled by default)
 
-```bash
-# Check LORA file paths
-ls -la flux-lora/
-ls -la "naya_wan_lora/"
-```
+### Performance Tips
+- Use GPU for faster generation
+- Enable xformers for memory efficiency
+- Adjust batch sizes based on available memory
 
-### שגיאות CUDA
+## License
 
-```bash
-# Check GPU availability
-nvidia-smi
-python -c "import torch; print(torch.cuda.is_available())"
-```
+This project uses various open-source models and libraries. Please check individual licenses for commercial use.
 
-## רישיון
+## Support
 
-פרויקט זה מיועד למטרות חינוכיות ומחקריות בלבד.
-
-## תמיכה
-
-לשאלות ותמיכה, צור issue ב-GitHub או פנה ישירות.
+For issues and questions, please check the API documentation at `/docs` when running the server.

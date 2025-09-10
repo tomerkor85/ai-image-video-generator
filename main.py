@@ -4,6 +4,7 @@ import torch
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
+import shutil
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,15 @@ import cv2
 from flux_generator import FluxGenerator
 from wan_generator import WanGenerator
 
+# Import for model downloading
+try:
+    from huggingface_hub import hf_hub_download
+    HF_HUB_AVAILABLE = True
+except ImportError:
+    HF_HUB_AVAILABLE = False
+    print("⚠️ huggingface_hub not available, will use wget for downloads")
+
+
 # GPU Setup
 torch.cuda.empty_cache()
 if torch.cuda.is_available():
@@ -34,6 +44,60 @@ if torch.cuda.is_available():
 else:
     device = "cpu"
     print("⚠️ No GPU detected, using CPU")
+
+def download_lora_models():
+    """Download LORA models from Hugging Face if not exists"""
+    print("📥 Checking for LORA models...")
+    
+    models = {
+        "naya_wan_lora/lora_t2v_A14B_separate_high.safetensors": 
+            "lora_t2v_A14B_separate_high.safetensors",
+        "naya_wan_lora/lora_t2v_A14B_separate_low.safetensors": 
+            "lora_t2v_A14B_separate_low.safetensors",
+        "flux-lora/naya2.safetensors": 
+            "naya2.safetensors"
+    }
+    
+    for local_path, filename in models.items():
+        # Create directory if not exists
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        
+        # Download only if file doesn't exist
+        if not os.path.exists(local_path):
+            print(f"📥 Downloading {local_path}...")
+            
+            try:
+                if HF_HUB_AVAILABLE:
+                    # Download with huggingface_hub
+                    downloaded_path = hf_hub_download(
+                        repo_id="tomerkor1985/test",
+                        filename=filename,
+                        cache_dir="./cache"
+                    )
+                    
+                    # Copy to correct location
+                    shutil.copy(downloaded_path, local_path)
+                    print(f"✅ Downloaded {local_path}")
+                else:
+                    # Fallback to wget
+                    import subprocess
+                    url = f"https://huggingface.co/tomerkor1985/test/resolve/main/{filename}"
+                    result = subprocess.run([
+                        "wget", "-c", "-O", local_path, url
+                    ], capture_output=True, text=True)
+                    
+                    if result.returncode == 0:
+                        print(f"✅ Downloaded {local_path}")
+                    else:
+                        print(f"❌ Failed to download {local_path}: {result.stderr}")
+                        
+            except Exception as e:
+                print(f"❌ Error downloading {local_path}: {e}")
+        else:
+            print(f"✅ {local_path} already exists")
+
+# Download models at startup
+download_lora_models()
 
 # Environment setup
 os.environ['HF_HOME'] = '/workspace/cache'
