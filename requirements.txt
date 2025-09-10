@@ -1,34 +1,34 @@
 # Core Dependencies
-torch==2.2.0
-torchvision==0.17.0
-torchaudio==2.2.0
-numpy==1.26.4
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+numpy>=1.24.0
 
 # Diffusers & AI Models
-diffusers==0.27.2
-transformers==4.40.0
-accelerate==0.29.3
-safetensors==0.4.3
-huggingface-hub==0.22.2
+diffusers>=0.25.0
+transformers>=4.35.0
+accelerate>=0.25.0
+safetensors>=0.4.0
+huggingface-hub>=0.20.0
 
-# Memory Optimization
-xformers==0.0.22.post7
+# Memory Optimization (optional - skip if conflicts)
+# xformers>=0.0.20
 
 # Web Framework
-fastapi==0.110.0
-uvicorn[standard]==0.29.0
-python-multipart==0.0.9
+fastapi>=0.100.0
+uvicorn[standard]>=0.25.0
+python-multipart>=0.0.6
 
 # Image Processing
-Pillow==11.0.0
-opencv-python==4.8.1.78
-imageio==2.37.0
-imageio-ffmpeg==0.4.9
+Pillow>=10.0.0
+opencv-python>=4.8.0
+imageio>=2.30.0
+imageio-ffmpeg>=0.4.0
 
 # Utilities
-scipy==1.11.4
-omegaconf==2.3.0
-psutil==5.9.8
+scipy>=1.10.0
+omegaconf>=2.3.0
+psutil>=5.9.0
 
 # Optional - for advanced features
 # sentencepiece==0.1.99  # For some text models
