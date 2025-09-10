@@ -23,6 +23,7 @@ MANIFEST
 
 # Virtual environments
 venv/
+venv_new/
 env/
 ENV/
 env.bak/
@@ -89,3 +90,5 @@ huggingface/
 # Temporary files
 *.tmp
 *.temp
+/venv_new/
+/venv_new/
