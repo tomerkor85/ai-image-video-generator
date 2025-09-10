@@ -20,13 +20,17 @@ class FluxGenerator:
         try:
             logger.info(f"Loading FLUX model on {self.device}")
             
+            # Get Hugging Face token from environment
+            hf_token = os.environ.get("HUGGINGFACE_TOKEN")
+            
             # Load base FLUX model
             self.pipeline = FluxPipeline.from_pretrained(
                 self.model_id,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 device_map="auto" if self.device == "cuda" else None,
                 safety_checker=None,  # Disable safety checker for uncensored generation
-                requires_safety_checker=False
+                requires_safety_checker=False,
+                token=hf_token  # Use authentication token
             )
             
             # Move to device if not using device_map

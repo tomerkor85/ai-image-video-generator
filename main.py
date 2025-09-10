@@ -20,7 +20,6 @@ import uvicorn
 from PIL import Image
 import numpy as np
 import cv2
-import moviepy.editor as mp
 
 # Import our custom generators
 from flux_generator import FluxGenerator
