@@ -26,7 +26,7 @@ class WanGenerator:
             self.pipeline = StableVideoDiffusionPipeline.from_pretrained(
                 self.model_id,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                device_map="auto" if self.device == "cuda" else None,
+                device_map="balanced" if self.device == "cuda" else None,
                 safety_checker=None,  # Disable safety checker for uncensored generation
                 requires_safety_checker=False
             )

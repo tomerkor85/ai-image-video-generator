@@ -50,7 +50,7 @@ class Config:
         """Get model-specific configuration"""
         base_config = {
             "torch_dtype": getattr(torch, cls.TORCH_DTYPE) if hasattr(torch, cls.TORCH_DTYPE) else torch.float16,
-            "device_map": "auto" if cls.DEVICE == "cuda" else None,
+            "device_map": "balanced" if cls.DEVICE == "cuda" else None,
             "safety_checker": None,
             "requires_safety_checker": cls.REQUIRES_SAFETY_CHECKER,
         }
