@@ -23,14 +23,13 @@ class FluxGenerator:
             # Load FLUX model
             from diffusers import FluxPipeline
             
-            # Get Black Forest Labs token for FLUX model
-            bfl_token = os.environ.get("BFL_TOKEN", os.environ.get("HUGGINGFACE_TOKEN"))
-            print(f"🔑 Black Forest Labs Token: {'✅ Found' if bfl_token else '❌ Not found'}")
-            if bfl_token:
-                print(f"🔑 Token: {bfl_token}")
-                print(f"🔑 Token length: {len(bfl_token)}")
-                # BFL tokens don't need hf_ prefix
-                hf_token = bfl_token
+            # Get Hugging Face token for FLUX model (FLUX is on HF Hub)
+            hf_token = os.environ.get("HUGGINGFACE_TOKEN")
+            print(f"🔑 Hugging Face Token: {'✅ Found' if hf_token else '❌ Not found'}")
+            if hf_token:
+                print(f"🔑 Token: {hf_token}")
+                print(f"🔑 Token length: {len(hf_token)}")
+                print(f"🔑 Has hf_ prefix: {hf_token.startswith('hf_')}")
             
             self.pipeline = FluxPipeline.from_pretrained(
                 self.model_id,
