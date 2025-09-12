@@ -16,6 +16,12 @@ logger = logging.getLogger(__name__)
 def clear_gpu_memory(force=False):
     """Aggressively clear GPU memory with optional force mode"""
     if torch.cuda.is_available():
+        # Set memory fraction to prevent fragmentation
+        try:
+            torch.cuda.set_per_process_memory_fraction(0.95)
+        except:
+            pass
+            
         # Force garbage collection first
         gc.collect()
         
@@ -25,15 +31,26 @@ def clear_gpu_memory(force=False):
         
         # Force mode - more aggressive cleanup
         if force:
+            # Reset memory stats to prevent fragmentation
+            try:
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.reset_accumulated_memory_stats()
+            except:
+                pass
+                
             # Try to clear all cached memory
-            torch.cuda.reset_peak_memory_stats()
-            torch.cuda.reset_accumulated_memory_stats()
-            
             # Multiple rounds of cleanup
             for _ in range(3):
                 gc.collect()
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
+                
+            # Try to defragment memory
+            try:
+                torch.cuda.memory._dump_snapshot("memory_snapshot.pickle")
+                torch.cuda.memory._record_memory_history(enabled=None)
+            except:
+                pass
 
 def get_memory_info():
     """Get detailed memory information"""
@@ -153,14 +170,16 @@ class FluxGenerator:
         
         # Memory optimization settings
         self.memory_optimizations = {
-            "enable_sequential_cpu_offload": False,  # Will enable conditionally
-            "enable_model_cpu_offload": False,       # Will enable conditionally
+            "enable_sequential_cpu_offload": True,   # Always enable for memory safety
+            "enable_model_cpu_offload": True,        # Always enable for memory safety
             "enable_attention_slicing": True,
             "enable_vae_slicing": True,
             "enable_vae_tiling": True,
             "low_cpu_mem_usage": True,
             "torch_dtype": torch.float16,  # Use float16 for better memory efficiency
-            "variant": "fp16"  # Use fp16 variant when available
+            "variant": "fp16",  # Use fp16 variant when available
+            "max_memory": {0: "20GB"},  # Limit GPU memory usage
+            "offload_folder": "offload_weights"  # Offload folder for weights
         }
         
     def is_loaded(self) -> bool:
@@ -226,9 +245,15 @@ class FluxGenerator:
     async def load_model(self):
         """Load model with official FLUX LORA loading method"""
         try:
+            # Set CUDA memory management environment variables
+            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512,expandable_segments:True,roundup_power2_divisions:16"
+            
             # Aggressive memory clearing before loading
             logger.info("🧹 Clearing GPU memory before model loading...")
             clear_gpu_memory(force=True)
+            
+            # Create offload directory
+            os.makedirs("offload_weights", exist_ok=True)
             
             model_info = self.available_models[self.current_model]
             logger.info(f"📥 Loading {model_info['description']}...")
@@ -271,7 +296,11 @@ class FluxGenerator:
                     torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                     safety_checker=None,
                     requires_safety_checker=False,
-                    use_safetensors=True
+                    use_safetensors=True,
+                    low_cpu_mem_usage=True,
+                    device_map="auto",
+                    max_memory=self.memory_optimizations["max_memory"],
+                    offload_folder=self.memory_optimizations["offload_folder"]
                 )
                 
             # Handle FLUX models - OFFICIAL WAY
@@ -281,22 +310,25 @@ class FluxGenerator:
                 
                 # Load FLUX pipeline with maximum memory optimization
                 load_kwargs = {
+                    model_info["id"],
                     "torch_dtype": self.memory_optimizations["torch_dtype"],
                     "token": hf_token,
                     "use_safetensors": True,
                     "low_cpu_mem_usage": True,
-                    "device_map": "balanced",  # Let it handle device placement
+                    "device_map": "auto",
+                    "max_memory": self.memory_optimizations["max_memory"],
+                    "offload_folder": self.memory_optimizations["offload_folder"]
                 }
                 
                 # Try to use fp16 variant if available
                 try:
                     load_kwargs["variant"] = "fp16"
-                    self.pipeline = FluxPipeline.from_pretrained(model_info["id"], **load_kwargs)
+                    self.pipeline = FluxPipeline.from_pretrained(**load_kwargs)
                     logger.info("✅ Loaded FP16 variant")
                 except:
                     # Fallback to regular loading
                     load_kwargs.pop("variant", None)
-                    self.pipeline = FluxPipeline.from_pretrained(model_info["id"], **load_kwargs)
+                    self.pipeline = FluxPipeline.from_pretrained(**load_kwargs)
                     logger.info("✅ Loaded regular variant")
                 
                 # Don't manually move to device when using device_map="auto"
@@ -305,8 +337,13 @@ class FluxGenerator:
                 # Enable memory optimizations (but not CPU offload since we're using device_map)
                 logger.info("🔧 Enabling memory optimizations...")
                 
-                # Don't use CPU offload with device_map="auto"
-                logger.info("ℹ️ Using device_map instead of CPU offload")
+                # Enable CPU offload for maximum memory efficiency
+                if self.memory_optimizations["enable_sequential_cpu_offload"]:
+                    self.pipeline.enable_sequential_cpu_offload()
+                    logger.info("✅ Sequential CPU offload enabled")
+                elif self.memory_optimizations["enable_model_cpu_offload"]:
+                    self.pipeline.enable_model_cpu_offload()
+                    logger.info("✅ Model CPU offload enabled")
                 
                 if self.memory_optimizations["enable_vae_slicing"]:
                     self.pipeline.enable_vae_slicing()
@@ -338,21 +375,28 @@ class FluxGenerator:
             # Handle SDXL models
             elif model_info["type"] == "sdxl":
                 load_kwargs = {
+                    model_info["id"],
                     "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
                     "token": hf_token,
                     "safety_checker": None,
                     "requires_safety_checker": False,
                     "use_safetensors": True,
                     "low_cpu_mem_usage": True,
-                    "device_map": "balanced"
+                    "device_map": "auto",
+                    "max_memory": self.memory_optimizations["max_memory"],
+                    "offload_folder": self.memory_optimizations["offload_folder"]
                 }
                 
-                self.pipeline = StableDiffusionXLPipeline.from_pretrained(model_info["id"], **load_kwargs)
+                self.pipeline = StableDiffusionXLPipeline.from_pretrained(**load_kwargs)
                 
                 # Don't manually move when using device_map
                 logger.info(f"🔧 SDXL loaded with automatic device mapping")
                 
                 # Enable memory optimizations for SDXL
+                if self.memory_optimizations["enable_sequential_cpu_offload"]:
+                    self.pipeline.enable_sequential_cpu_offload()
+                elif self.memory_optimizations["enable_model_cpu_offload"]:
+                    self.pipeline.enable_model_cpu_offload()
                 if self.memory_optimizations["enable_attention_slicing"]:
                     self.pipeline.enable_attention_slicing()
                 if self.memory_optimizations["enable_vae_slicing"]:
@@ -433,6 +477,10 @@ class FluxGenerator:
     ) -> Image.Image:
         """Generate image with OFFICIAL FLUX parameters"""
         try:
+            # Pre-generation memory management
+            logger.info("🧹 Pre-generation memory cleanup...")
+            clear_gpu_memory(force=True)
+            
             if not self.is_loaded():
                 raise RuntimeError("❌ Model not loaded")
             
@@ -443,6 +491,16 @@ class FluxGenerator:
                 num_inference_steps = model_info.get("recommended_steps", 25)
             if guidance_scale is None:
                 guidance_scale = model_info.get("recommended_guidance", 7.5)
+            
+            # Reduce parameters for memory safety
+            if model_info["type"] == "flux":
+                # Reduce resolution if needed for FLUX
+                max_pixels = 1024 * 1024  # 1MP max for safety
+                if width * height > max_pixels:
+                    ratio = (max_pixels / (width * height)) ** 0.5
+                    width = int(width * ratio)
+                    height = int(height * ratio)
+                    logger.info(f"🔧 Reduced resolution for memory safety: {width}x{height}")
             
             # Set seed
             generator = None
@@ -456,7 +514,7 @@ class FluxGenerator:
             logger.info(f"🎨 Generating ({lora_status}): {prompt[:50]}...")
             
             # Generate based on model type - OFFICIAL METHODS
-            with torch.no_grad():
+            with torch.no_grad(), torch.cuda.amp.autocast():
                 # Clear memory before generation
                 clear_gpu_memory()
                 
