@@ -1,6 +1,7 @@
 import torch
 import logging
 import gc
+import psutil
 from diffusers import FluxPipeline, StableDiffusionXLPipeline, DiffusionPipeline
 from peft import LoraConfig, get_peft_model
 from PIL import Image
@@ -12,12 +13,71 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-def clear_gpu_memory():
-    """Aggressively clear GPU memory"""
+def clear_gpu_memory(force=False):
+    """Aggressively clear GPU memory with optional force mode"""
     if torch.cuda.is_available():
+        # Force garbage collection first
+        gc.collect()
+        
+        # Clear PyTorch cache
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
-        gc.collect()
+        
+        # Force mode - more aggressive cleanup
+        if force:
+            # Try to clear all cached memory
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.reset_accumulated_memory_stats()
+            
+            # Multiple rounds of cleanup
+            for _ in range(3):
+                gc.collect()
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+
+def get_memory_info():
+    """Get detailed memory information"""
+    if not torch.cuda.is_available():
+        return {"error": "CUDA not available"}
+    
+    gpu_memory = torch.cuda.get_device_properties(0).total_memory
+    allocated = torch.cuda.memory_allocated()
+    cached = torch.cuda.memory_reserved()
+    free_gpu = gpu_memory - allocated
+    
+    # System RAM
+    ram = psutil.virtual_memory()
+    
+    return {
+        "gpu_total_gb": gpu_memory / 1024**3,
+        "gpu_allocated_gb": allocated / 1024**3,
+        "gpu_cached_gb": cached / 1024**3,
+        "gpu_free_gb": free_gpu / 1024**3,
+        "ram_total_gb": ram.total / 1024**3,
+        "ram_available_gb": ram.available / 1024**3,
+        "ram_used_percent": ram.percent
+    }
+
+def check_memory_requirements(model_type: str) -> bool:
+    """Check if we have enough memory for the model"""
+    memory_info = get_memory_info()
+    free_gb = memory_info.get("gpu_free_gb", 0)
+    
+    # Estimated memory requirements (GB)
+    requirements = {
+        "flux_dev": 16.0,      # FLUX.1-dev is very large
+        "flux_schnell": 12.0,  # FLUX.1-schnell is smaller
+        "sdxl_base": 8.0,      # SDXL models
+        "realistic_vision": 8.0,
+        "civitai_custom": 8.0
+    }
+    
+    required = requirements.get(model_type, 8.0)
+    has_enough = free_gb >= required
+    
+    logger.info(f"🔧 Memory check: {free_gb:.1f}GB free, {required:.1f}GB required for {model_type}")
+    
+    return has_enough
 
 class FluxGenerator:
     def __init__(self):
@@ -93,13 +153,14 @@ class FluxGenerator:
         
         # Memory optimization settings
         self.memory_optimizations = {
-            "enable_sequential_cpu_offload": True,
-            "enable_model_cpu_offload": True,
+            "enable_sequential_cpu_offload": False,  # Will enable conditionally
+            "enable_model_cpu_offload": False,       # Will enable conditionally
             "enable_attention_slicing": True,
             "enable_vae_slicing": True,
             "enable_vae_tiling": True,
             "low_cpu_mem_usage": True,
-            "torch_dtype": torch.bfloat16 if torch.cuda.is_available() else torch.float32
+            "torch_dtype": torch.float16,  # Use float16 for better memory efficiency
+            "variant": "fp16"  # Use fp16 variant when available
         }
         
     def is_loaded(self) -> bool:
@@ -165,15 +226,33 @@ class FluxGenerator:
     async def load_model(self):
         """Load model with official FLUX LORA loading method"""
         try:
-            # Clear memory before loading
-            clear_gpu_memory()
+            # Aggressive memory clearing before loading
+            logger.info("🧹 Clearing GPU memory before model loading...")
+            clear_gpu_memory(force=True)
             
             model_info = self.available_models[self.current_model]
             logger.info(f"📥 Loading {model_info['description']}...")
-            logger.info(f"🔧 GPU Memory before loading: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB total")
-            if torch.cuda.is_available():
-                logger.info(f"🔧 GPU Memory allocated: {torch.cuda.memory_allocated() / 1024**3:.1f} GB")
-                logger.info(f"🔧 GPU Memory cached: {torch.cuda.memory_reserved() / 1024**3:.1f} GB")
+            
+            # Check memory requirements
+            memory_info = get_memory_info()
+            logger.info(f"🔧 Memory status: {memory_info['gpu_free_gb']:.1f}GB free, {memory_info['gpu_allocated_gb']:.1f}GB allocated")
+            
+            # Check if we have enough memory
+            if not check_memory_requirements(self.current_model):
+                logger.warning(f"⚠️ Insufficient GPU memory for {self.current_model}")
+                
+                # Auto-fallback to smaller model
+                if self.current_model == "flux_dev":
+                    logger.info("🔄 Auto-switching to FLUX Schnell (smaller, faster)")
+                    self.current_model = "flux_schnell"
+                    model_info = self.available_models[self.current_model]
+                elif self.current_model == "flux_schnell":
+                    logger.info("🔄 Auto-switching to SDXL Base (much smaller)")
+                    self.current_model = "sdxl_base"
+                    model_info = self.available_models[self.current_model]
+                else:
+                    logger.error("❌ Not enough memory even for smallest model")
+                    raise RuntimeError("Insufficient GPU memory. Try clearing memory or using a smaller model.")
             
             hf_token = os.environ.get("HUGGINGFACE_TOKEN")
             
@@ -198,28 +277,37 @@ class FluxGenerator:
             # Handle FLUX models - OFFICIAL WAY
             elif model_info["type"] == "flux":
                 logger.info(f"🔥 Loading FLUX model: {model_info['id']}")
-                logger.info("🔧 Using aggressive memory optimizations for FLUX...")
+                logger.info("🔧 Using maximum memory optimizations for FLUX...")
                 
-                # Load FLUX pipeline with official method
-                self.pipeline = FluxPipeline.from_pretrained(
+                # Load FLUX pipeline with maximum memory optimization
+                load_kwargs = {
                     model_info["id"],
-                    torch_dtype=self.memory_optimizations["torch_dtype"],
-                    token=hf_token,
-                    use_safetensors=True,
-                    low_cpu_mem_usage=self.memory_optimizations["low_cpu_mem_usage"],
-                )
+                    "torch_dtype": self.memory_optimizations["torch_dtype"],
+                    "token": hf_token,
+                    "use_safetensors": True,
+                    "low_cpu_mem_usage": True,
+                    "device_map": "auto",  # Let it handle device placement
+                }
                 
-                # Move to device manually since we're not using device_map
-                self.pipeline = self.pipeline.to(self.device)
-                logger.info(f"🔧 Model moved to {self.device}")
+                # Try to use fp16 variant if available
+                try:
+                    load_kwargs["variant"] = "fp16"
+                    self.pipeline = FluxPipeline.from_pretrained(**load_kwargs)
+                    logger.info("✅ Loaded FP16 variant")
+                except:
+                    # Fallback to regular loading
+                    load_kwargs.pop("variant", None)
+                    self.pipeline = FluxPipeline.from_pretrained(**load_kwargs)
+                    logger.info("✅ Loaded regular variant")
                 
-                # Enable ALL memory optimizations for FLUX
+                # Don't manually move to device when using device_map="auto"
+                logger.info(f"🔧 Model loaded with automatic device mapping")
+                
+                # Enable memory optimizations (but not CPU offload since we're using device_map)
                 logger.info("🔧 Enabling memory optimizations...")
                 
-                # Use sequential CPU offload instead of model CPU offload for better memory usage
-                if self.memory_optimizations["enable_sequential_cpu_offload"]:
-                    self.pipeline.enable_sequential_cpu_offload()
-                    logger.info("✅ Sequential CPU offload enabled")
+                # Don't use CPU offload with device_map="auto"
+                logger.info("ℹ️ Using device_map instead of CPU offload")
                 
                 if self.memory_optimizations["enable_vae_slicing"]:
                     self.pipeline.enable_vae_slicing()
@@ -244,25 +332,35 @@ class FluxGenerator:
                 # Clear memory after loading
                 clear_gpu_memory()
                 
+                # Final memory check
+                final_memory = get_memory_info()
+                logger.info(f"🔧 Final memory: {final_memory['gpu_free_gb']:.1f}GB free")
+                
             # Handle SDXL models
             elif model_info["type"] == "sdxl":
-                self.pipeline = StableDiffusionXLPipeline.from_pretrained(
+                load_kwargs = {
                     model_info["id"],
-                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                    token=hf_token,
-                    safety_checker=None,
-                    requires_safety_checker=False,
-                    use_safetensors=True
-                )
+                    "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
+                    "token": hf_token,
+                    "safety_checker": None,
+                    "requires_safety_checker": False,
+                    "use_safetensors": True,
+                    "low_cpu_mem_usage": True,
+                    "device_map": "auto"
+                }
                 
-                # Move to device
-                self.pipeline = self.pipeline.to(self.device)
+                self.pipeline = StableDiffusionXLPipeline.from_pretrained(**load_kwargs)
+                
+                # Don't manually move when using device_map
+                logger.info(f"🔧 SDXL loaded with automatic device mapping")
                 
                 # Enable memory optimizations for SDXL
                 if self.memory_optimizations["enable_attention_slicing"]:
                     self.pipeline.enable_attention_slicing()
-                if self.memory_optimizations["enable_model_cpu_offload"] and self.device == "cuda":
-                    self.pipeline.enable_model_cpu_offload()
+                if self.memory_optimizations["enable_vae_slicing"]:
+                    self.pipeline.enable_vae_slicing()
+                if self.memory_optimizations["enable_vae_tiling"]:
+                    self.pipeline.enable_vae_tiling()
             
             # Load NAYA2 LORA - OFFICIAL METHOD
             self.lora_loaded = False
@@ -307,20 +405,20 @@ class FluxGenerator:
             
             self._loaded = True
             lora_status = "with NAYA2 LORA" if self.lora_loaded else "base model"
-            logger.info(f"✅ Model loaded successfully ({lora_status})")
+            logger.info(f"✅ {model_info['description']} loaded successfully ({lora_status})")
             
             # Log final memory usage
-            if torch.cuda.is_available():
-                logger.info(f"🔧 Final GPU Memory allocated: {torch.cuda.memory_allocated() / 1024**3:.1f} GB")
-                logger.info(f"🔧 Final GPU Memory cached: {torch.cuda.memory_reserved() / 1024**3:.1f} GB")
+            final_memory = get_memory_info()
+            logger.info(f"🔧 Final memory status: {final_memory['gpu_free_gb']:.1f}GB free")
             
         except Exception as e:
             logger.error(f"❌ Model loading failed: {e}")
-            logger.error(f"🔧 GPU Memory at error: {torch.cuda.memory_allocated() / 1024**3:.1f} GB allocated")
+            error_memory = get_memory_info()
+            logger.error(f"🔧 GPU Memory at error: {error_memory['gpu_allocated_gb']:.1f}GB allocated")
             self._loaded = False
             self.lora_loaded = False
             # Clear memory on error
-            clear_gpu_memory()
+            clear_gpu_memory(force=True)
             raise e
     
     async def generate(
@@ -414,7 +512,7 @@ class FluxGenerator:
         except Exception as e:
             logger.error(f"❌ Generation failed: {e}")
             # Clear memory on error
-            clear_gpu_memory()
+            clear_gpu_memory(force=True)
             raise e
     
     def unload_model(self):
@@ -439,6 +537,6 @@ class FluxGenerator:
             self.lora_loaded = False
             
             # Aggressive memory cleanup
-            clear_gpu_memory()
+            clear_gpu_memory(force=True)
             
             logger.info("🗑️ Model unloaded")

@@ -44,6 +44,7 @@ import numpy as np
 from generators.flux_generator import FluxGenerator
 from generators.wan_generator import WanGenerator
 from utils.model_downloader import download_models
+from generators.flux_generator import get_memory_info, clear_gpu_memory
 
 # GPU Setup
 torch.cuda.empty_cache()
@@ -251,21 +252,7 @@ async def health():
 @app.get("/memory/status")
 async def get_memory_status():
     """Get current memory usage"""
-    if not torch.cuda.is_available():
-        return {"error": "CUDA not available"}
-    
-    return {
-        "gpu_name": torch.cuda.get_device_name(),
-        "total_memory_gb": round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 2),
-        "allocated_memory_gb": round(torch.cuda.memory_allocated() / 1024**3, 2),
-        "cached_memory_gb": round(torch.cuda.memory_reserved() / 1024**3, 2),
-        "free_memory_gb": round((torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_reserved()) / 1024**3, 2)
-    }
-
-@app.post("/memory/clear")
-async def clear_memory():
-    """Manually clear GPU memory"""
-    if torch.cuda.is_available():
+    return get_memory_info()
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
         gc.collect()
@@ -517,11 +504,12 @@ async def download_civitai_model(request: dict):
 
 def cleanup_memory():
     """Clean up GPU memory"""
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    gc.collect()
-
-@app.get("/ui", response_class=HTMLResponse)
+    clear_gpu_memory(force=True)
+    memory_info = get_memory_info()
+    return {
+        "message": "GPU memory cleared aggressively",
+        "memory_status": memory_info
+    }
 async def serve_ui():
     """Serve advanced web UI"""
     return """
