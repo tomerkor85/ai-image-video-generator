@@ -159,12 +159,23 @@ class FluxGenerator:
             # Handle FLUX models
             elif model_info["type"] == "flux":
                 # Load FLUX with proper pipeline
-                self.pipeline = FluxPipeline.from_pretrained(
-                    model_info["id"],
-                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                    token=hf_token,
-                    use_safetensors=True
-                )
+                try:
+                    self.pipeline = FluxPipeline.from_pretrained(
+                        model_info["id"],
+                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                        token=hf_token,
+                        use_safetensors=True,
+                        device_map="auto"
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️ FLUX loading with device_map failed: {e}")
+                    # Try without device_map
+                    self.pipeline = FluxPipeline.from_pretrained(
+                        model_info["id"],
+                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                        token=hf_token,
+                        use_safetensors=True
+                    )
             
             # Handle SDXL models
             elif model_info["type"] == "sdxl":
