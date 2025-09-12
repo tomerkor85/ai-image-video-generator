@@ -170,13 +170,25 @@ def get_wan_generator():
         wan_generator = WanGenerator()
     return wan_generator
 
-@app.on_event("startup")
-async def startup_event():
-    """Download models on startup"""
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
     logger.info("🚀 Starting AI Generator...")
     await download_models()
     logger.info("✅ Ready to generate!")
+    yield
+    # Shutdown
+    logger.info("👋 Shutting down...")
 
+# Update FastAPI app
+app = FastAPI(
+    title="🔥 Uncensored AI Generator",
+    version="2.0.0",
+    description="Professional AI Image & Video Generation for Adults - No Censorship",
+    lifespan=lifespan
+)
 @app.get("/")
 async def root():
     """API information"""
@@ -352,6 +364,10 @@ async def generate_video(req: VideoRequest, background_tasks: BackgroundTasks):
 async def list_outputs():
     """List generated files"""
     try:
+        # Create directories if they don't exist
+        (OUTPUT_DIR / "images").mkdir(parents=True, exist_ok=True)
+        (OUTPUT_DIR / "videos").mkdir(parents=True, exist_ok=True)
+        
         images = list((OUTPUT_DIR / "images").glob("*.png"))
         videos = list((OUTPUT_DIR / "videos").glob("*.mp4"))
         
@@ -827,11 +843,13 @@ async def serve_ui():
                                     <option value="false">No (Base Model)</option>
                                 </select>
                             </div>
-                        </div>
-                    </div>
-                </div>
-                                <label>🎲 Seed (Optional)</label>
-                                <input type="number" id="image-seed" placeholder="Random">
+                            
+                            <div class="form-group">
+                                <label>🔧 Use LORA</label>
+                                <select id="image-use-lora">
+                                    <option value="true" selected>Yes (Enhanced)</option>
+                                    <option value="false">No (Base Model)</option>
+                                </select>
                             </div>
                         </div>
                     </div>
@@ -1097,12 +1115,18 @@ async def serve_ui():
         async function loadGallery() {
             try {
                 const response = await fetch('/outputs/list');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
                 const data = await response.json();
                 
                 let galleryHTML = '';
                 
                 // Add recent images
-                data.images.slice(0, 8).forEach(img => {
+                const images = data.images || [];
+                const videos = data.videos || [];
+                
+                images.slice(0, 8).forEach(img => {
                     galleryHTML += `
                         <div class="gallery-item" onclick="window.open('/outputs/images/${img.name}')">
                             <img src="/outputs/images/${img.name}" alt="Generated Image">
@@ -1112,7 +1136,7 @@ async def serve_ui():
                 });
                 
                 // Add recent videos
-                data.videos.slice(0, 4).forEach(vid => {
+                videos.slice(0, 4).forEach(vid => {
                     galleryHTML += `
                         <div class="gallery-item" onclick="window.open('/outputs/videos/${vid.name}')">
                             <video muted loop onmouseover="this.play()" onmouseout="this.pause()">
@@ -1123,9 +1147,15 @@ async def serve_ui():
                     `;
                 });
                 
+                if (!galleryHTML) {
+                    galleryHTML = '<p style="text-align: center; color: #666; grid-column: 1/-1;">No images or videos generated yet</p>';
+                }
+                
                 document.getElementById('gallery').innerHTML = galleryHTML;
             } catch (err) {
                 console.error('Failed to load gallery:', err);
+                // Show empty gallery instead of error
+                document.getElementById('gallery').innerHTML = '<p style="text-align: center; color: #666; grid-column: 1/-1;">Gallery loading...</p>';
             }
         }
         

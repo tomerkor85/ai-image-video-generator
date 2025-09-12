@@ -121,11 +121,12 @@ class FluxGenerator:
         try:
             hf_token = os.environ.get("HUGGINGFACE_TOKEN")
             
-            if model_type == "flux":
+            if model_type == "flux" or model_type == "sdxl":
                 # Download NAYA2 LORA for FLUX
                 lora_path = "models/naya2.safetensors"
                 if not os.path.exists(lora_path):
-                    logger.info("📥 Downloading NAYA2 LORA for FLUX...")
+                    logger.info(f"📥 Downloading NAYA2 LORA for {model_type.upper()}...")
+                    os.makedirs("models", exist_ok=True)
                     downloaded_path = hf_hub_download(
                         repo_id="tomerkor1985/test",
                         filename="naya2.safetensors",
@@ -134,14 +135,9 @@ class FluxGenerator:
                         local_dir_use_symlinks=False
                     )
                     logger.info(f"✅ NAYA2 LORA downloaded: {lora_path}")
+                else:
+                    logger.info(f"✅ NAYA2 LORA already exists: {lora_path}")
                 return lora_path
-                
-            elif model_type == "sdxl":
-                # For SDXL models, try to find compatible LORA
-                lora_path = "models/sdxl_lora.safetensors"
-                if not os.path.exists(lora_path):
-                    logger.info("⚠️ No SDXL LORA found - using base model")
-                return lora_path if os.path.exists(lora_path) else None
                 
         except Exception as e:
             logger.warning(f"⚠️ Could not download LORA: {e}")
@@ -189,12 +185,13 @@ class FluxGenerator:
             # Handle FLUX models
             elif model_info["type"] == "flux":
                 try:
+                    # Try with specific revision to avoid tokenizer issues
                     self.pipeline = FluxPipeline.from_pretrained(
                         model_info["id"],
                         torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                         token=hf_token,
                         use_safetensors=True,
-                        trust_remote_code=True
+                        revision="main"
                     )
                 except Exception as e:
                     logger.error(f"❌ FLUX loading failed: {e}")
@@ -231,11 +228,29 @@ class FluxGenerator:
                 if lora_path and os.path.exists(lora_path):
                     try:
                         logger.info(f"📥 Loading LORA: {lora_path}")
-                        self.pipeline.load_lora_weights(lora_path)
+                        if model_info["type"] == "flux":
+                            # FLUX LORA loading
+                            self.pipeline.load_lora_weights(lora_path, adapter_name="naya2")
+                            self.pipeline.set_adapters("naya2")
+                        else:
+                            # SDXL LORA loading
+                            self.pipeline.load_lora_weights(lora_path)
                         self.lora_loaded = True
                         logger.info("✅ LORA loaded successfully!")
                     except Exception as e:
                         logger.warning(f"⚠️ LORA loading failed: {e}")
+                        # Try alternative LORA loading for SDXL
+                        if model_info["type"] == "sdxl":
+                            try:
+                                logger.info("🔄 Trying alternative LORA loading...")
+                                from diffusers import LoraLoaderMixin
+                                self.pipeline.load_lora_weights(".", weight_name=os.path.basename(lora_path))
+                                self.lora_loaded = True
+                                logger.info("✅ LORA loaded with alternative method!")
+                            except Exception as e2:
+                                logger.warning(f"⚠️ Alternative LORA loading also failed: {e2}")
+                else:
+                    logger.warning(f"⚠️ LORA file not found: {lora_path}")
             
             # Optimizations
             self.pipeline.enable_attention_slicing()
@@ -286,8 +301,30 @@ class FluxGenerator:
             
             logger.info(f"🎨 Generating ({lora_status}): {prompt[:50]}...")
             
-            # Temporarily disable LORA if requested
-            if not use_lora and self.lora_loaded:
+            # Handle LORA enable/disable
+            if model_info["type"] == "flux":
+                # FLUX LORA handling
+                if effective_lora:
+                    try:
+                        self.pipeline.set_adapters("naya2")
+                        logger.info("🔧 FLUX LORA enabled")
+                    except:
+                        effective_lora = False
+                        logger.warning("⚠️ Failed to enable FLUX LORA")
+                else:
+                    try:
+                        self.pipeline.set_adapters([])  # Disable all adapters
+                        logger.info("🔧 FLUX LORA disabled")
+                    except:
+                        pass
+            else:
+                # SDXL LORA handling
+                if not use_lora and self.lora_loaded:
+                    try:
+                        self.pipeline.unload_lora_weights()
+                        logger.info("🔧 SDXL LORA temporarily disabled")
+                    except:
+                        pass
                 try:
                     self.pipeline.unload_lora_weights()
                     logger.info("🔧 LORA temporarily disabled")
@@ -309,26 +346,40 @@ class FluxGenerator:
             with torch.no_grad():
                 if model_info["type"] == "flux":
                     # FLUX generation
+                    generation_kwargs = {
+                        "prompt": prompt,
+                        "height": height,
+                        "width": width,
+                        "num_inference_steps": num_inference_steps,
+                        "guidance_scale": guidance_scale,
+                        "generator": generator,
+                    }
+                    
+                    # Add LORA scale only if LORA is active
+                    if effective_lora:
+                        generation_kwargs["joint_attention_kwargs"] = {"scale": lora_scale}
+                    
                     result = self.pipeline(
-                        prompt=prompt,
-                        height=height,
-                        width=width,
-                        num_inference_steps=num_inference_steps,
-                        guidance_scale=guidance_scale,
-                        generator=generator,
-                        joint_attention_kwargs={"scale": lora_scale} if effective_lora else None,
+                        **generation_kwargs
                     )
                 else:
                     # SDXL generation
+                    generation_kwargs = {
+                        "prompt": prompt,
+                        "negative_prompt": negative_prompt,
+                        "height": height,
+                        "width": width,
+                        "num_inference_steps": num_inference_steps,
+                        "guidance_scale": guidance_scale,
+                        "generator": generator,
+                    }
+                    
+                    # Add LORA scale only if LORA is active
+                    if effective_lora:
+                        generation_kwargs["cross_attention_kwargs"] = {"scale": lora_scale}
+                    
                     result = self.pipeline(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
-                        height=height,
-                        width=width,
-                        num_inference_steps=num_inference_steps,
-                        guidance_scale=guidance_scale,
-                        generator=generator,
-                        cross_attention_kwargs={"scale": lora_scale} if effective_lora else None,
+                        **generation_kwargs
                     )
             
             image = result.images[0]
