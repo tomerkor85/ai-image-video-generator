@@ -131,6 +131,7 @@ class ImageRequest(BaseModel):
     prompt: str = Field(..., description="Text prompt for image generation")
     negative_prompt: str = Field("", description="Negative prompt")
     model: str = Field("flux_schnell", description="Model to use for generation")
+    civitai_url: Optional[str] = Field(None, description="CivitAI model URL for custom models")
     width: int = Field(1024, ge=512, le=2048, description="Image width")
     height: int = Field(1024, ge=512, le=2048, description="Image height")
     steps: int = Field(25, ge=10, le=50, description="Inference steps")
@@ -223,7 +224,8 @@ async def generate_image(req: ImageRequest, background_tasks: BackgroundTasks):
         
         # Switch model if requested
         if req.model != generator.current_model:
-            generator.switch_model(req.model)
+            civitai_url = req.civitai_url if hasattr(req, 'civitai_url') else None
+            generator.switch_model(req.model, civitai_url)
         
         # Load model if needed
         if not generator.is_loaded():
@@ -271,6 +273,7 @@ async def generate_image(req: ImageRequest, background_tasks: BackgroundTasks):
             "filenames": filenames,
             "urls": [f"/outputs/images/{fn}" for fn in filenames],
             "model": f"{generator.available_models[generator.current_model]['description']} + LORA",
+            "lora_loaded": generator.lora_loaded,
             "settings": {
                 "size": f"{req.width}x{req.height}",
                 "steps": req.steps,
@@ -374,7 +377,8 @@ async def get_available_models():
     generator = get_flux_generator()
     return {
         "models": generator.get_available_models(),
-        "current": generator.current_model
+        "current": generator.current_model,
+        "lora_loaded": generator.lora_loaded if hasattr(generator, 'lora_loaded') else False
     }
 
 @app.post("/setup/hf-token")
@@ -408,6 +412,29 @@ async def setup_hf_token(request: dict):
         
     except Exception as e:
         logger.error(f"❌ Error setting HF token: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/download/civitai")
+async def download_civitai_model(request: dict):
+    """Download CivitAI model"""
+    try:
+        url = request.get("url")
+        filename = request.get("filename")
+        
+        if not url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        
+        generator = get_flux_generator()
+        model_path = await generator.download_civitai_model(url, filename)
+        
+        return {
+            "success": True,
+            "message": "Model downloaded successfully",
+            "path": model_path
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error downloading CivitAI model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def cleanup_memory():
@@ -717,10 +744,17 @@ async def serve_ui():
                                 <option value="flux_schnell">FLUX.1-schnell - Fast generation</option>
                                 <option value="sdxl_base">SDXL Base - Very permissive</option>
                                 <option value="realistic_vision">Realistic Vision V6 - Best for photorealistic</option>
-                                <option value="dreamshaper">DreamShaper - Versatile styles</option>
-                                <option value="deliberate">Deliberate - Detailed content</option>
                                 <option value="civitai_custom">Custom CivitAI Model</option>
                             </select>
+                        </div>
+                        
+                        <div class="form-group" id="civitai-url-group" style="display: none;">
+                            <label>🔗 CivitAI Model URL</label>
+                            <input type="url" id="civitai-url" placeholder="https://civitai.com/api/download/models/...">
+                            <button type="button" onclick="downloadCivitAI()" style="margin-top: 10px; padding: 8px 15px; background: #28a745; color: white; border: none; border-radius: 5px;">
+                                📥 Download Model
+                            </button>
+                            <div id="civitai-status" style="margin-top: 10px; font-size: 12px;"></div>
                         </div>
                         
                         <div class="form-group">
@@ -938,6 +972,7 @@ async def serve_ui():
                 prompt: document.getElementById('image-prompt').value,
                 negative_prompt: document.getElementById('image-negative').value,
                 model: document.getElementById('image-model').value,
+                civitai_url: document.getElementById('civitai-url').value || null,
                 num_images: parseInt(document.getElementById('image-count').value),
                 width: parseInt(document.getElementById('image-width').value),
                 height: parseInt(document.getElementById('image-height').value),
@@ -981,7 +1016,7 @@ async def serve_ui():
                         <div style="text-align: center;">
                             ${imagesHtml}
                             <p style="margin-top: 15px; color: #666;">
-                                Model: ${res.model} | Size: ${res.settings.size} | Steps: ${res.settings.steps} | LORA: ${res.settings.use_lora ? 'Enabled' : 'Disabled'}
+                                Model: ${res.model} | LORA: ${res.lora_loaded ? '✅ Loaded' : '❌ Not loaded'} | Size: ${res.settings.size} | Steps: ${res.settings.steps}
                             </p>
                         </div>
                     `;
@@ -1099,6 +1134,46 @@ async def serve_ui():
         
         // Auto-refresh gallery every 30 seconds
         setInterval(loadGallery, 30000);
+        
+        // Model selection handler
+        document.getElementById('image-model').addEventListener('change', function() {
+            const civitaiGroup = document.getElementById('civitai-url-group');
+            if (this.value === 'civitai_custom') {
+                civitaiGroup.style.display = 'block';
+            } else {
+                civitaiGroup.style.display = 'none';
+            }
+        });
+        
+        // Download CivitAI model
+        async function downloadCivitAI() {
+            const url = document.getElementById('civitai-url').value;
+            const status = document.getElementById('civitai-status');
+            
+            if (!url) {
+                status.innerHTML = '<span style="color: red;">❌ Please enter a URL</span>';
+                return;
+            }
+            
+            status.innerHTML = '<span style="color: blue;">📥 Downloading model...</span>';
+            
+            try {
+                const response = await fetch('/download/civitai', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url: url})
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    status.innerHTML = '<span style="color: green;">✅ Model downloaded successfully!</span>';
+                } else {
+                    status.innerHTML = '<span style="color: red;">❌ Download failed</span>';
+                }
+            } catch (err) {
+                status.innerHTML = '<span style="color: red;">❌ Error: ' + err.message + '</span>';
+            }
+        }
         
         // Setup token function
         async function setupToken() {
