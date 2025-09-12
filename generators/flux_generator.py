@@ -207,7 +207,7 @@ class FluxGenerator:
                     token=hf_token,
                     use_safetensors=True,
                     low_cpu_mem_usage=self.memory_optimizations["low_cpu_mem_usage"],
-                    device_map="auto"  # Automatic device mapping
+                    device_map="balanced"  # Automatic device mapping
                 )
                 
                 # Don't move to device manually - let device_map handle it
