@@ -1,4 +1,7 @@
-# Core ML Libraries (optimized for RunPod PyTorch template)
+# Core ML Libraries (optimized for RunPod PyTorch 2.1.0 template)
+torch==2.1.0+cu118
+torchvision==0.16.0+cu118
+torchaudio==2.1.0+cu118
 transformers==4.36.2
 diffusers==0.25.0
 accelerate==0.25.0
