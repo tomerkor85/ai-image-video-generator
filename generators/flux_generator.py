@@ -97,8 +97,9 @@ class FluxGenerator:
                 None
             )
             
-            if not hf_token:
+            if not hf_token and model_info.get("requires_token", False):
                 logger.warning("⚠️ No Hugging Face token found - some models may not be accessible")
+                logger.info("💡 Set token with: export HUGGINGFACE_TOKEN='your_token'")
 
             
             model_info = self.available_models[self.current_model]
@@ -118,8 +119,32 @@ class FluxGenerator:
                     raise FileNotFoundError(f"Local model not found: {self.model_id}")
             elif "flux" in self.current_model:
                 # Load FLUX model (dev or schnell)
-                from diffusers import FluxPipeline
-                self.pipeline = FluxPipeline.from_pretrained(
+                try:
+                    from diffusers import FluxPipeline
+                    self.pipeline = FluxPipeline.from_pretrained(
+                        self.model_id,
+                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                        token=hf_token,
+                        safety_checker=None,  # DISABLE SAFETY CHECKER
+                        requires_safety_checker=False,  # NO CENSORSHIP
+                        use_safetensors=True,
+                        trust_remote_code=True
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to load FLUX model: {e}")
+                    logger.info("Falling back to SDXL...")
+                    # Fallback to SDXL
+                    from diffusers import StableDiffusionXLPipeline
+                    self.pipeline = StableDiffusionXLPipeline.from_pretrained(
+                        "stabilityai/stable-diffusion-xl-base-1.0",
+                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                        token=hf_token,
+                        safety_checker=None,
+                        requires_safety_checker=False,
+                        use_safetensors=True,
+                        trust_remote_code=True
+                    )
+                    self.current_model = "sdxl_base"
                     self.model_id,
                     torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                     token=hf_token,

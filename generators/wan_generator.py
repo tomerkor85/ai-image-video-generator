@@ -14,7 +14,23 @@ class WanGenerator:
     def __init__(self):
         self.pipeline = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model_id = "stabilityai/stable-video-diffusion-img2vid-xt"
+        
+        # Try different video models in order of preference
+        self.available_models = {
+            "svd_xt": {
+                "id": "stabilityai/stable-video-diffusion-img2vid-xt",
+                "pipeline": "StableVideoDiffusionPipeline",
+                "supports_lora": False
+            },
+            "animatediff": {
+                "id": "ByteDance/AnimateDiff-Lightning",
+                "pipeline": "AnimateDiffPipeline", 
+                "supports_lora": True
+            }
+        }
+        
+        self.current_model = "svd_xt"
+        self.model_id = self.available_models[self.current_model]["id"]
         self.lora_paths = {
             "high_noise": "models/lora_t2v_A14B_separate_high.safetensors",
             "low_noise": "models/lora_t2v_A14B_separate_low.safetensors",
@@ -39,15 +55,30 @@ class WanGenerator:
             )
             
             # Load WAN model WITHOUT safety checker - using DiffusionPipeline for LORA support
-            self.pipeline = DiffusionPipeline.from_pretrained(
-                self.model_id,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                token=hf_token,
-                safety_checker=None,  # DISABLE SAFETY CHECKER
-                requires_safety_checker=False,  # NO CENSORSHIP
-                use_safetensors=True,
-                trust_remote_code=True
-            )
+            model_info = self.available_models[self.current_model]
+            
+            if model_info["supports_lora"]:
+                # Use DiffusionPipeline for LORA support
+                from diffusers import DiffusionPipeline
+                self.pipeline = DiffusionPipeline.from_pretrained(
+                    self.model_id,
+                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                    token=hf_token,
+                    safety_checker=None,
+                    requires_safety_checker=False,
+                    use_safetensors=True,
+                    trust_remote_code=True
+                )
+            else:
+                # Use specific pipeline for SVD
+                from diffusers import StableVideoDiffusionPipeline
+                self.pipeline = StableVideoDiffusionPipeline.from_pretrained(
+                    self.model_id,
+                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                    token=hf_token,
+                    use_safetensors=True,
+                    trust_remote_code=True
+                )
             
             # Move to device
             self.pipeline = self.pipeline.to(self.device)
@@ -55,18 +86,19 @@ class WanGenerator:
             # Try to load LORA - now supported!
             lora_loaded = False
             
-            # Try to load WAN LORAs in order of preference
-            for lora_name, lora_path in self.lora_paths.items():
-                if os.path.exists(lora_path):
-                    try:
-                        logger.info(f"Loading WAN LORA: {lora_name} from {lora_path}")
-                        self.pipeline.load_lora_weights(lora_path)
-                        logger.info(f"✅ WAN LORA loaded successfully: {lora_name}")
-                        lora_loaded = True
-                        break
-                    except Exception as e:
-                        logger.warning(f"⚠️ Could not load LORA {lora_name}: {e}")
-                        continue
+            # Only try to load LORA if model supports it
+            if model_info["supports_lora"]:
+                for lora_name, lora_path in self.lora_paths.items():
+                    if os.path.exists(lora_path):
+                        try:
+                            logger.info(f"Loading WAN LORA: {lora_name} from {lora_path}")
+                            self.pipeline.load_lora_weights(lora_path)
+                            logger.info(f"✅ WAN LORA loaded successfully: {lora_name}")
+                            lora_loaded = True
+                            break
+                        except Exception as e:
+                            logger.warning(f"⚠️ Could not load LORA {lora_name}: {e}")
+                            continue
             
             if not lora_loaded:
                 logger.warning("⚠️ No WAN LORA found - using base model")
@@ -132,10 +164,11 @@ class WanGenerator:
             
             # Generate video frames WITHOUT content filtering
             with torch.no_grad():
-                # Check if pipeline supports image input (SVD) or text input (newer models)
-                if hasattr(self.pipeline, '__call__'):
+                model_info = self.available_models[self.current_model]
+                
+                if model_info["supports_lora"] and hasattr(self.pipeline, '__call__'):
+                    # Try text-to-video for LORA-enabled models
                     try:
-                        # Try text-to-video first (newer WAN models)
                         result = self.pipeline(
                             prompt=prompt,
                             negative_prompt=negative_prompt,
@@ -146,23 +179,26 @@ class WanGenerator:
                             guidance_scale=guidance_scale,
                             generator=generator,
                             cross_attention_kwargs={"scale": lora_scale} if use_lora else None,
-                            # NO SAFETY CHECKER - UNCENSORED
                         )
                     except Exception as e:
-                        logger.info("Text-to-video failed, trying image-to-video...")
+                        logger.warning(f"Text-to-video failed: {e}")
+                        logger.info("Trying image-to-video...")
                         # Fallback to image-to-video
                         result = self.pipeline(
                             image=base_image,
-                            decode_chunk_size=8,
                             num_frames=num_frames,
                             num_inference_steps=num_inference_steps,
-                            guidance_scale=guidance_scale,
                             generator=generator,
-                            cross_attention_kwargs={"scale": lora_scale} if use_lora else None,
-                            # NO SAFETY CHECKER - UNCENSORED
                         )
                 else:
-                    raise RuntimeError("Pipeline not properly loaded")
+                    # SVD model - image-to-video only, no guidance_scale
+                    result = self.pipeline(
+                        image=base_image,
+                        decode_chunk_size=8,
+                        num_frames=num_frames,
+                        num_inference_steps=num_inference_steps,
+                        generator=generator,
+                    )
             
             frames = result.frames[0]
             

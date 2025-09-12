@@ -348,8 +348,20 @@ async def generate_video(req: VideoRequest, background_tasks: BackgroundTasks):
 @app.get("/outputs/list")
 async def list_outputs():
     """List generated files"""
-    images = list((OUTPUT_DIR / "images").glob("*.png"))
-    videos = list((OUTPUT_DIR / "videos").glob("*.mp4"))
+    try:
+        images = list((OUTPUT_DIR / "images").glob("*.png"))
+        videos = list((OUTPUT_DIR / "videos").glob("*.mp4"))
+        
+        return {
+            "images": [{"name": f.name, "size": f.stat().st_size, "created": f.stat().st_mtime} for f in sorted(images, reverse=True)[:20]],
+            "videos": [{"name": f.name, "size": f.stat().st_size, "created": f.stat().st_mtime} for f in sorted(videos, reverse=True)[:20]]
+        }
+    except Exception as e:
+        logger.error(f"Error listing outputs: {e}")
+        return {
+            "images": [],
+            "videos": []
+        }
     
     return {
         "images": [{"name": f.name, "size": f.stat().st_size, "created": f.stat().st_mtime} for f in sorted(images, reverse=True)[:20]],
