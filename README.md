@@ -1,149 +1,107 @@
-# AI Image & Video Generator
+# 🔥 Uncensored AI Generator for RunPod
 
-🚀 AI-powered image and video generation using FLUX.1-dev and Stable Video Diffusion with custom LORA models.
+Professional AI image and video generation system designed for adult content creation with no censorship restrictions.
 
-## Features
+## 🚀 Features
 
-- 🎨 **Image Generation**: High-quality images using FLUX.1-dev with custom LORA
-- 🎬 **Video Generation**: Text-to-video using Stable Video Diffusion with custom LORA
-- 🌐 **Web Interface**: Beautiful web UI for easy generation
-- 🔧 **API**: RESTful API for programmatic access
-- 📱 **Responsive**: Works on desktop and mobile
+- **🎨 FLUX Image Generation**: High-quality uncensored images with custom LORA
+- **🎬 WAN2.2 Video Generation**: Smooth video generation with advanced models
+- **🚫 No Censorship**: Complete removal of safety checkers and content filters
+- **💻 Professional UI**: Beautiful tabbed interface with advanced controls
+- **⚡ RunPod Optimized**: Designed specifically for RunPod GPU instances
+- **🔧 Easy Setup**: Automatic model downloading and configuration
 
-## Installation
+## 🛠️ RunPod Setup
 
-### Automatic Model Download
-The LORA models will be downloaded automatically on first run from:
-- [High LORA](https://huggingface.co/tomerkor1985/test/resolve/main/lora_t2v_A14B_separate_high.safetensors)
-- [Low LORA](https://huggingface.co/tomerkor1985/test/resolve/main/lora_t2v_A14B_separate_low.safetensors)
-- [Flux LORA](https://huggingface.co/tomerkor1985/test/resolve/main/naya2.safetensors)
+### Quick Deploy
+1. Create new RunPod instance with GPU (RTX 3090/4090 recommended)
+2. Use this Docker image or clone repository
+3. Run: `python main.py`
+4. Access UI at: `http://your-runpod-ip:8000/ui`
 
-### Manual Download
+### Manual Setup
 ```bash
-# Download models manually
-bash download_models.sh
-```
+# Clone repository
+git clone <your-repo-url>
+cd ai-generator
 
-### Python Setup
-```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the server
+# Run server
 python main.py
 ```
 
-## Usage
+## 🎯 Usage
 
 ### Web Interface
-1. Start the server: `python main.py`
-2. Open your browser: `http://localhost:8000/ui`
-3. Enter your prompt and generate!
+- Navigate to `/ui` for the complete interface
+- **Image Tab**: Generate images using FLUX + LORA
+- **Video Tab**: Generate videos using WAN2.2
+- **Gallery**: View and download all creations
 
-### API Usage
+### API Endpoints
+- `POST /generate/image` - Generate uncensored images
+- `POST /generate/video` - Generate uncensored videos
+- `GET /health` - System health check
+- `GET /outputs/list` - List generated files
 
-#### Generate Image
-```bash
-curl -X POST "http://localhost:8000/generate/image" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "a beautiful sunset over mountains, highly detailed digital art",
-    "negative_prompt": "blurry, low quality",
-    "width": 1024,
-    "height": 1024,
-    "steps": 25,
-    "guidance": 7.5,
-    "model_type": "flux",
-    "lora_scale": 1.0
-  }'
-```
-
-#### Generate Video
-```bash
-curl -X POST "http://localhost:8000/generate/video" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "a cat playing with a ball",
-    "negative_prompt": "blurry, low quality",
-    "width": 512,
-    "height": 512,
-    "num_frames": 16,
-    "steps": 25,
-    "guidance": 7.5,
-    "lora_scale": 1.0,
-    "lora_type": "high"
-  }'
-```
-
-## API Endpoints
-
-- `GET /` - API information
-- `GET /health` - Health check
-- `POST /generate/image` - Generate image
-- `POST /generate/video` - Generate video
-- `GET /ui` - Web interface
-- `GET /outputs` - List generated files
-- `GET /docs` - API documentation
-
-## Models
-
-### FLUX.1-dev
-- **Model**: `black-forest-labs/FLUX.1-dev`
-- **LORA**: Custom Naya LORA for enhanced generation
-- **Use Case**: High-quality image generation
-
-### Stable Video Diffusion
-- **Model**: `stabilityai/stable-video-diffusion-img2vid-xt`
-- **LORA**: Custom Naya WAN LORA (High/Low noise variants)
-- **Use Case**: Text-to-video generation
-
-## Configuration
+## 🔧 Configuration
 
 ### Environment Variables
 ```bash
-# Optional: Hugging Face token for private models
+# Optional: Hugging Face token for FLUX model access
 export HUGGINGFACE_TOKEN="your_token_here"
 
-# Cache directory
-export HF_HOME="/workspace/cache"
-export TRANSFORMERS_CACHE="/workspace/cache"
-export DIFFUSERS_CACHE="/workspace/cache"
+# GPU memory optimization
+export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:512"
 ```
 
-### GPU Requirements
-- **Minimum**: 8GB VRAM
-- **Recommended**: 16GB+ VRAM
-- **CUDA**: Required for GPU acceleration
+### Model Requirements
+- **FLUX LORA**: `naya2.safetensors` (auto-downloaded)
+- **WAN2.2 LORA**: High/Low noise variants (auto-downloaded)
+- **GPU Memory**: 8GB+ VRAM recommended
 
-## Docker Support
+## ⚠️ Important Notes
 
-```bash
-# Build and run with Docker
-docker-compose up --build
-```
-
-## Troubleshooting
-
-### Model Download Issues
-If automatic download fails, try manual download:
-```bash
-bash download_models.sh
-```
-
-### Memory Issues
-- Reduce image/video dimensions
-- Lower number of inference steps
-- Use CPU offloading (enabled by default)
+### Adult Content Warning
+This system is designed for professional adult content creation and has all safety mechanisms disabled. Use responsibly and in accordance with local laws.
 
 ### Performance Tips
-- Use GPU for faster generation
+- Use RTX 3090/4090 for best performance
 - Enable xformers for memory efficiency
-- Adjust batch sizes based on available memory
+- Adjust batch sizes based on available VRAM
+- Use lower resolutions for faster generation
 
-## License
+## 🐳 Docker Support
 
-This project uses various open-source models and libraries. Please check individual licenses for commercial use.
+```bash
+# Build and run
+docker build -t uncensored-ai .
+docker run --gpus all -p 8000:8000 uncensored-ai
+```
 
-## Support
+## 📊 System Requirements
 
-For issues and questions, please check the API documentation at `/docs` when running the server.
+- **GPU**: NVIDIA RTX 3090/4090 (8GB+ VRAM)
+- **RAM**: 16GB+ system memory
+- **Storage**: 50GB+ free space
+- **CUDA**: 11.8+
+
+## 🔒 Security & Privacy
+
+- All generation happens locally on your RunPod instance
+- No data is sent to external services (except model downloads)
+- Complete privacy for your content creation
+
+## 📞 Support
+
+For issues specific to this uncensored version:
+1. Check GPU memory usage
+2. Verify model downloads completed
+3. Check RunPod instance specifications
+4. Review logs for detailed error information
+
+---
+
+**⚠️ This software is intended for adult content creators and removes all content safety mechanisms. Use responsibly.**

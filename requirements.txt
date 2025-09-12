@@ -1,4 +1,4 @@
-# Core ML Libraries - Let pip resolve versions
+# Core ML Libraries
 torch==2.2.0
 torchvision==0.17.0
 torchaudio==2.2.0
@@ -6,7 +6,6 @@ transformers==4.36.2
 diffusers==0.30.2
 accelerate==0.25.0
 safetensors==0.4.1
-# huggingface-hub - תן ל-pip לבחור גרסה תואמת
 
 # Image/Video Processing
 Pillow==10.1.0
@@ -23,12 +22,4 @@ python-multipart==0.0.6
 # Utilities
 numpy==1.26.3
 scipy==1.11.4
-tqdm==4.66.1
-omegaconf==2.3.0
-einops==0.7.0
-sentencepiece==0.2.0
-protobuf==3.20.3
-
-# Model downloading
 requests==2.31.0
-wget==3.2

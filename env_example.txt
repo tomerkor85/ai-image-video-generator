@@ -1,6 +1,0 @@
-# Hugging Face Token for accessing gated models like FLUX.1-dev
-# Get your token from: https://huggingface.co/settings/tokens
-HUGGINGFACE_TOKEN=your_token_here
-
-# Optional: Set to false if you want to force CPU usage
-CUDA_AVAILABLE=true
