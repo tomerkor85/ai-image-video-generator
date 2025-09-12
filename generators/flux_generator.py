@@ -11,7 +11,7 @@ class FluxGenerator:
     def __init__(self):
         self.pipeline = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model_id = "black-forest-labs/FLUX.1-dev"
+        self.model_id = "black-forest-labs/FLUX.1-schnell"  # More permissive version
         self.lora_path = "models/naya2.safetensors"
         self._loaded = False
         
@@ -34,7 +34,8 @@ class FluxGenerator:
                 token=hf_token,
                 safety_checker=None,  # DISABLE SAFETY CHECKER
                 requires_safety_checker=False,  # NO CENSORSHIP
-                use_safetensors=True
+                use_safetensors=True,
+                trust_remote_code=True  # Allow custom code execution
             )
             
             # Move to device
