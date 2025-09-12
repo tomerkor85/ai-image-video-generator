@@ -37,14 +37,27 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### 5. Access Interface
+### 5. Setup Hugging Face Token (Important!)
+```bash
+# Method 1: Environment variable (recommended)
+export HUGGINGFACE_TOKEN="hf_your_token_here"
+
+# Method 2: Using huggingface-cli
+pip install huggingface_hub
+huggingface-cli login
+
+# Method 3: Via API (in the web interface)
+# Go to /setup/hf-token endpoint
+```
+
+### 6. Access Interface
 - **Web UI**: `https://<pod-id>-8000.proxy.runpod.net/ui`
 - **API**: `https://<pod-id>-8000.proxy.runpod.net/docs`
 
-## Environment Variables (Optional)
+## Environment Variables
 
 ```bash
-export HUGGINGFACE_TOKEN="your_token_here"  # For gated models
+export HUGGINGFACE_TOKEN="hf_your_token_here"  # Required for most models
 export CUDA_VISIBLE_DEVICES=0
 ```
 

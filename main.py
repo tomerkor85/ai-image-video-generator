@@ -7,6 +7,7 @@ Supports FLUX LORA and WAN2.2 models
 import os
 import torch
 import gc
+import getpass
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
@@ -52,6 +53,41 @@ os.environ['HF_HOME'] = '/workspace/cache'
 os.environ['TRANSFORMERS_CACHE'] = '/workspace/cache'
 os.environ['DIFFUSERS_CACHE'] = '/workspace/cache'
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
+
+# Hugging Face Token Setup
+def setup_huggingface_token():
+    """Setup Hugging Face token from various sources"""
+    token = None
+    
+    # Method 1: Environment variable (most secure)
+    token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")
+    
+    if token:
+        logger.info("✅ Hugging Face token loaded from environment variable")
+        return token
+    
+    # Method 2: Check for token file
+    token_file = Path.home() / ".cache" / "huggingface" / "token"
+    if token_file.exists():
+        try:
+            token = token_file.read_text().strip()
+            logger.info("✅ Hugging Face token loaded from cache file")
+            return token
+        except:
+            pass
+    
+    # Method 3: Manual input (for interactive setup)
+    logger.warning("⚠️ No Hugging Face token found!")
+    logger.info("💡 You can set it by:")
+    logger.info("   1. Environment: export HUGGINGFACE_TOKEN='your_token'")
+    logger.info("   2. Or run: huggingface-cli login")
+    
+    return None
+
+# Setup HF token on startup
+HF_TOKEN = setup_huggingface_token()
+if HF_TOKEN:
+    os.environ["HUGGINGFACE_TOKEN"] = HF_TOKEN
 
 # Create directories
 OUTPUT_DIR = Path("outputs")
@@ -131,10 +167,13 @@ async def startup_event():
 @app.get("/")
 async def root():
     """API information"""
+    hf_status = "✅ Connected" if os.environ.get("HUGGINGFACE_TOKEN") else "❌ No token"
+    
     return {
         "name": "🔥 Uncensored AI Generator",
         "version": "2.0.0",
         "description": "Professional AI Generation - No Limits",
+        "huggingface_status": hf_status,
         "gpu": {
             "available": torch.cuda.is_available(),
             "count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
@@ -147,6 +186,7 @@ async def root():
             "/generate/video": "Generate video with WAN2.2",
             "/ui": "Web interface",
             "/outputs": "Generated files",
+            "/setup/hf-token": "Setup Hugging Face token",
             "/docs": "API documentation"
         }
     }
@@ -289,6 +329,35 @@ async def get_available_models():
         "models": generator.get_available_models(),
         "current": generator.current_model
     }
+
+@app.post("/setup/hf-token")
+async def setup_hf_token(token: str):
+    """Setup Hugging Face token"""
+    try:
+        # Validate token format (basic check)
+        if not token.startswith("hf_") or len(token) < 20:
+            raise HTTPException(status_code=400, detail="Invalid token format")
+        
+        # Set environment variable
+        os.environ["HUGGINGFACE_TOKEN"] = token
+        
+        # Save to cache file for persistence
+        cache_dir = Path.home() / ".cache" / "huggingface"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        token_file = cache_dir / "token"
+        token_file.write_text(token)
+        
+        logger.info("✅ Hugging Face token updated successfully")
+        
+        return {
+            "success": True,
+            "message": "Hugging Face token updated successfully",
+            "status": "✅ Connected"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error setting HF token: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 def cleanup_memory():
     """Clean up GPU memory"""

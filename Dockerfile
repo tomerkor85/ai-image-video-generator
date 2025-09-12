@@ -8,6 +8,7 @@ ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 ENV HF_HOME=/workspace/cache
 ENV TRANSFORMERS_CACHE=/workspace/cache
 ENV DIFFUSERS_CACHE=/workspace/cache
+# ENV HUGGINGFACE_TOKEN=your_token_here  # Uncomment and set your token
 
 # Install system dependencies (minimal since PyTorch template has most)
 RUN apt-get update && apt-get install -y \

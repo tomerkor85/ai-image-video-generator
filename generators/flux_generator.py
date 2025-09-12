@@ -68,8 +68,15 @@ class FluxGenerator:
             logger.info(f"Loading FLUX model on {self.device}")
             logger.info(f"Current model: {self.available_models[self.current_model]['description']}")
             
-            # Get Hugging Face token
-            hf_token = os.environ.get("HUGGINGFACE_TOKEN")
+            # Get Hugging Face token (with fallbacks)
+            hf_token = (
+                os.environ.get("HUGGINGFACE_TOKEN") or 
+                os.environ.get("HF_TOKEN") or
+                None
+            )
+            
+            if not hf_token:
+                logger.warning("⚠️ No Hugging Face token found - some models may not be accessible")
             
             model_info = self.available_models[self.current_model]
             
