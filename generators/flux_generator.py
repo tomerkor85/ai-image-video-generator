@@ -1,6 +1,7 @@
 import torch
 import logging
 from diffusers import FluxPipeline, StableDiffusionXLPipeline, DiffusionPipeline
+from peft import LoraConfig, get_peft_model
 from PIL import Image
 import os
 from typing import Optional
@@ -205,22 +206,37 @@ class FluxGenerator:
                         else:
                             # SDXL LORA loading - try multiple methods
                             try:
-                                self.pipeline.load_lora_weights(lora_path)
+                                # Try with PEFT backend
+                                from peft import PeftModel
+                                self.pipeline.unet = PeftModel.from_pretrained(
+                                    self.pipeline.unet, 
+                                    lora_path,
+                                    is_trainable=False
+                                )
                                 logger.info("✅ SDXL NAYA2 LORA loaded successfully!")
                             except Exception as e1:
-                                logger.warning(f"⚠️ Standard LORA loading failed: {e1}")
+                                logger.warning(f"⚠️ PEFT LORA loading failed: {e1}")
                                 try:
-                                    # Alternative method
-                                    self.pipeline.load_lora_weights(".", weight_name="naya2.safetensors")
-                                    logger.info("✅ SDXL NAYA2 LORA loaded with alternative method!")
+                                    # Fallback to standard method
+                                    self.pipeline.load_lora_weights(lora_path)
+                                    logger.info("✅ SDXL NAYA2 LORA loaded with standard method!")
                                 except Exception as e2:
-                                    logger.warning(f"⚠️ Alternative LORA loading failed: {e2}")
-                                    raise e2
+                                    logger.warning(f"⚠️ Standard LORA loading also failed: {e2}")
+                                    try:
+                                        # Final fallback - directory method
+                                        self.pipeline.load_lora_weights(".", weight_name="naya2.safetensors")
+                                        logger.info("✅ SDXL NAYA2 LORA loaded with directory method!")
+                                    except Exception as e3:
+                                        logger.warning(f"⚠️ All LORA loading methods failed: {e3}")
+                                        logger.info("🔄 Continuing with base model...")
+                                        self.lora_loaded = False
+                                        return  # Don't raise error, just continue without LORA
                         
                         self.lora_loaded = True
                         
                     except Exception as e:
                         logger.warning(f"⚠️ NAYA2 LORA loading failed: {e}")
+                        logger.info("🔄 Continuing with base model...")
                         self.lora_loaded = False
                 else:
                     logger.warning(f"⚠️ NAYA2 LORA file not found: {lora_path}")

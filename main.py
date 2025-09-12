@@ -120,7 +120,14 @@ app.add_middleware(
 )
 
 # Mount static files
-app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
+try:
+    app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
+except Exception as e:
+    logger.warning(f"⚠️ Could not mount static files: {e}")
+    # Create the directories if they don't exist
+    (OUTPUT_DIR / "images").mkdir(parents=True, exist_ok=True)
+    (OUTPUT_DIR / "videos").mkdir(parents=True, exist_ok=True)
+    app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
 
 # Global generators
 flux_generator = None
@@ -268,6 +275,9 @@ async def generate_image(req: ImageRequest, background_tasks: BackgroundTasks):
             filename = f"flux_{timestamp}_{i+1}.png"
             filepath = OUTPUT_DIR / "images" / filename
             
+            # Ensure directory exists
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            
             image.save(filepath, quality=95)
             images.append(image)
             filenames.append(filename)
@@ -333,6 +343,9 @@ async def generate_video(req: VideoRequest, background_tasks: BackgroundTasks):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"wan_{timestamp}.mp4"
         filepath = OUTPUT_DIR / "videos" / filename
+        
+        # Ensure directory exists
+        filepath.parent.mkdir(parents=True, exist_ok=True)
         
         await generator.save_video(frames, filepath, fps=req.fps)
         logger.info(f"✅ Video saved: {filename}")

@@ -6,6 +6,7 @@ torchaudio==2.1.0+cu118
 transformers==4.36.2
 diffusers==0.30.0
 accelerate==0.25.0
+peft==0.7.1
 safetensors==0.4.1
 
 # Image/Video Processing
