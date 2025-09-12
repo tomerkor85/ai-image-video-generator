@@ -314,7 +314,7 @@ class FluxGenerator:
                     "token": hf_token,
                     "use_safetensors": True,
                     "low_cpu_mem_usage": True,
-                    "device_map": "auto",
+                    "device_map": "balanced",
                     "max_memory": self.memory_optimizations["max_memory"],
                     "offload_folder": self.memory_optimizations["offload_folder"]
                 }
@@ -379,7 +379,7 @@ class FluxGenerator:
                     "requires_safety_checker": False,
                     "use_safetensors": True,
                     "low_cpu_mem_usage": True,
-                    "device_map": "auto",
+                    "device_map": "balanced",
                     "max_memory": self.memory_optimizations["max_memory"],
                     "offload_folder": self.memory_optimizations["offload_folder"]
                 }
