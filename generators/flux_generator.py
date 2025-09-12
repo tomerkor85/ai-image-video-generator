@@ -77,6 +77,7 @@ class FluxGenerator:
             
             if not hf_token:
                 logger.warning("⚠️ No Hugging Face token found - some models may not be accessible")
+
             
             model_info = self.available_models[self.current_model]
             
