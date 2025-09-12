@@ -285,7 +285,7 @@ class FluxGenerator:
                     "token": hf_token,
                     "use_safetensors": True,
                     "low_cpu_mem_usage": True,
-                    "device_map": "auto",  # Let it handle device placement
+                    "device_map": "balanced",  # Let it handle device placement
                 }
                 
                 # Try to use fp16 variant if available
@@ -344,7 +344,7 @@ class FluxGenerator:
                     "requires_safety_checker": False,
                     "use_safetensors": True,
                     "low_cpu_mem_usage": True,
-                    "device_map": "auto"
+                    "device_map": "balanced"
                 }
                 
                 self.pipeline = StableDiffusionXLPipeline.from_pretrained(model_info["id"], **load_kwargs)
