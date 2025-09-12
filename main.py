@@ -22,6 +22,14 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Set CUDA memory allocation configuration for better memory management
+if torch.cuda.is_available():
+    # Set max split size to avoid fragmentation
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512,expandable_segments:True'
+    logger.info(f"🔧 CUDA memory configuration set: {os.environ.get('PYTORCH_CUDA_ALLOC_CONF')}")
+    logger.info(f"🔧 GPU Device: {torch.cuda.get_device_name()}")
+    logger.info(f"🔧 Total GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
@@ -182,7 +190,14 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("🚀 Starting AI Generator...")
+    # Clear any existing GPU memory
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        gc.collect()
+        logger.info("🔧 GPU memory cleared on startup")
+    
+    logger.info("🚀 Starting Uncensored AI Generator...")
     await download_models()
     logger.info("✅ Ready to generate!")
     yield
@@ -233,11 +248,45 @@ async def health():
         "memory_free": torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0) if torch.cuda.is_available() else 0
     }
 
+@app.get("/memory/status")
+async def get_memory_status():
+    """Get current memory usage"""
+    if not torch.cuda.is_available():
+        return {"error": "CUDA not available"}
+    
+    return {
+        "gpu_name": torch.cuda.get_device_name(),
+        "total_memory_gb": round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 2),
+        "allocated_memory_gb": round(torch.cuda.memory_allocated() / 1024**3, 2),
+        "cached_memory_gb": round(torch.cuda.memory_reserved() / 1024**3, 2),
+        "free_memory_gb": round((torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_reserved()) / 1024**3, 2)
+    }
+
+@app.post("/memory/clear")
+async def clear_memory():
+    """Manually clear GPU memory"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        gc.collect()
+        return {"message": "GPU memory cleared"}
+    return {"message": "CUDA not available"}
+
 @app.post("/generate/image")
 async def generate_image(req: ImageRequest, background_tasks: BackgroundTasks):
     """Generate uncensored image using FLUX with LORA"""
     try:
         logger.info(f"🎨 Generating image: {req.prompt[:50]}...")
+        
+        # Check memory before generation
+        if torch.cuda.is_available():
+            free_memory = (torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_reserved()) / 1024**3
+            logger.info(f"🔧 Free GPU memory before generation: {free_memory:.1f} GB")
+            
+            if free_memory < 1.0:  # Less than 1GB free
+                logger.warning("⚠️ Low GPU memory detected, clearing cache...")
+                torch.cuda.empty_cache()
+                gc.collect()
         
         generator = get_flux_generator()
         
@@ -847,14 +896,6 @@ async def serve_ui():
                             <div class="form-group">
                                 <label>🎲 Seed (Optional)</label>
                                 <input type="number" id="image-seed" placeholder="Random">
-                            </div>
-                            
-                            <div class="form-group">
-                                <label>🔧 Use LORA</label>
-                                <select id="image-use-lora">
-                                    <option value="true" selected>Yes (Enhanced)</option>
-                                    <option value="false">No (Base Model)</option>
-                                </select>
                             </div>
                             
                             <div class="form-group">

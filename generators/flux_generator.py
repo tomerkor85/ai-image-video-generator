@@ -1,5 +1,6 @@
 import torch
 import logging
+import gc
 from diffusers import FluxPipeline, StableDiffusionXLPipeline, DiffusionPipeline
 from peft import LoraConfig, get_peft_model
 from PIL import Image
@@ -10,6 +11,13 @@ import requests
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+def clear_gpu_memory():
+    """Aggressively clear GPU memory"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        gc.collect()
 
 class FluxGenerator:
     def __init__(self):
@@ -83,6 +91,17 @@ class FluxGenerator:
         self._loaded = False
         self.lora_loaded = False
         
+        # Memory optimization settings
+        self.memory_optimizations = {
+            "enable_sequential_cpu_offload": True,
+            "enable_model_cpu_offload": True,
+            "enable_attention_slicing": True,
+            "enable_vae_slicing": True,
+            "enable_vae_tiling": True,
+            "low_cpu_mem_usage": True,
+            "torch_dtype": torch.bfloat16 if torch.cuda.is_available() else torch.float32
+        }
+        
     def is_loaded(self) -> bool:
         return self._loaded and self.pipeline is not None
     
@@ -146,8 +165,15 @@ class FluxGenerator:
     async def load_model(self):
         """Load model with official FLUX LORA loading method"""
         try:
+            # Clear memory before loading
+            clear_gpu_memory()
+            
             model_info = self.available_models[self.current_model]
             logger.info(f"📥 Loading {model_info['description']}...")
+            logger.info(f"🔧 GPU Memory before loading: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB total")
+            if torch.cuda.is_available():
+                logger.info(f"🔧 GPU Memory allocated: {torch.cuda.memory_allocated() / 1024**3:.1f} GB")
+                logger.info(f"🔧 GPU Memory cached: {torch.cuda.memory_reserved() / 1024**3:.1f} GB")
             
             hf_token = os.environ.get("HUGGINGFACE_TOKEN")
             
@@ -172,23 +198,51 @@ class FluxGenerator:
             # Handle FLUX models - OFFICIAL WAY
             elif model_info["type"] == "flux":
                 logger.info(f"🔥 Loading FLUX model: {model_info['id']}")
+                logger.info("🔧 Using aggressive memory optimizations for FLUX...")
                 
                 # Load FLUX pipeline with official method
                 self.pipeline = FluxPipeline.from_pretrained(
                     model_info["id"],
-                    torch_dtype=torch.bfloat16 if self.device == "cuda" else torch.float32,
+                    torch_dtype=self.memory_optimizations["torch_dtype"],
                     token=hf_token,
                     use_safetensors=True,
-                    trust_remote_code=True
+                    low_cpu_mem_usage=self.memory_optimizations["low_cpu_mem_usage"],
+                    device_map="auto"  # Automatic device mapping
                 )
                 
-                # Move to device
-                self.pipeline = self.pipeline.to(self.device)
+                # Don't move to device manually - let device_map handle it
+                logger.info("🔧 Model loaded with automatic device mapping")
                 
-                # Enable memory optimizations for FLUX
-                self.pipeline.enable_model_cpu_offload()
-                self.pipeline.enable_vae_slicing()
-                self.pipeline.enable_vae_tiling()
+                # Enable ALL memory optimizations for FLUX
+                logger.info("🔧 Enabling memory optimizations...")
+                
+                # Use sequential CPU offload instead of model CPU offload for better memory usage
+                if self.memory_optimizations["enable_sequential_cpu_offload"]:
+                    self.pipeline.enable_sequential_cpu_offload()
+                    logger.info("✅ Sequential CPU offload enabled")
+                
+                if self.memory_optimizations["enable_vae_slicing"]:
+                    self.pipeline.enable_vae_slicing()
+                    logger.info("✅ VAE slicing enabled")
+                    
+                if self.memory_optimizations["enable_vae_tiling"]:
+                    self.pipeline.enable_vae_tiling()
+                    logger.info("✅ VAE tiling enabled")
+                
+                if self.memory_optimizations["enable_attention_slicing"]:
+                    self.pipeline.enable_attention_slicing()
+                    logger.info("✅ Attention slicing enabled")
+                
+                # Additional FLUX-specific optimizations
+                try:
+                    # Enable memory efficient attention if available
+                    self.pipeline.enable_xformers_memory_efficient_attention()
+                    logger.info("✅ XFormers memory efficient attention enabled")
+                except Exception as e:
+                    logger.info(f"⚠️ XFormers not available: {e}")
+                
+                # Clear memory after loading
+                clear_gpu_memory()
                 
             # Handle SDXL models
             elif model_info["type"] == "sdxl":
@@ -203,6 +257,12 @@ class FluxGenerator:
                 
                 # Move to device
                 self.pipeline = self.pipeline.to(self.device)
+                
+                # Enable memory optimizations for SDXL
+                if self.memory_optimizations["enable_attention_slicing"]:
+                    self.pipeline.enable_attention_slicing()
+                if self.memory_optimizations["enable_model_cpu_offload"] and self.device == "cuda":
+                    self.pipeline.enable_model_cpu_offload()
             
             # Load NAYA2 LORA - OFFICIAL METHOD
             self.lora_loaded = False
@@ -220,7 +280,8 @@ class FluxGenerator:
                             self.pipeline.load_lora_weights(
                                 lora_path, 
                                 weight_name=lora_weight_name,
-                                adapter_name="naya2"
+                                adapter_name="naya2",
+                                low_cpu_mem_usage=True
                             )
                             # Set adapter strength - OFFICIAL METHOD
                             self.pipeline.set_adapters("naya2", 0.85)
@@ -241,26 +302,25 @@ class FluxGenerator:
                     logger.warning(f"⚠️ NAYA2 LORA file not found: {full_lora_path}")
                     logger.info("💡 To use LORA, place naya2.safetensors in the models/ directory")
             
-            # Additional optimizations for non-FLUX models
-            if model_info["type"] != "flux":
-                self.pipeline.enable_attention_slicing()
-                if self.device == "cuda":
-                    self.pipeline.enable_model_cpu_offload()
-                    
-                try:
-                    self.pipeline.enable_xformers_memory_efficient_attention()
-                    logger.info("✅ XFormers enabled")
-                except:
-                    logger.info("⚠️ XFormers not available")
+            # Final memory cleanup
+            clear_gpu_memory()
             
             self._loaded = True
             lora_status = "with NAYA2 LORA" if self.lora_loaded else "base model"
             logger.info(f"✅ Model loaded successfully ({lora_status})")
             
+            # Log final memory usage
+            if torch.cuda.is_available():
+                logger.info(f"🔧 Final GPU Memory allocated: {torch.cuda.memory_allocated() / 1024**3:.1f} GB")
+                logger.info(f"🔧 Final GPU Memory cached: {torch.cuda.memory_reserved() / 1024**3:.1f} GB")
+            
         except Exception as e:
             logger.error(f"❌ Model loading failed: {e}")
+            logger.error(f"🔧 GPU Memory at error: {torch.cuda.memory_allocated() / 1024**3:.1f} GB allocated")
             self._loaded = False
             self.lora_loaded = False
+            # Clear memory on error
+            clear_gpu_memory()
             raise e
     
     async def generate(
@@ -301,6 +361,9 @@ class FluxGenerator:
             
             # Generate based on model type - OFFICIAL METHODS
             with torch.no_grad():
+                # Clear memory before generation
+                clear_gpu_memory()
+                
                 if model_info["type"] == "flux":
                     # FLUX generation - OFFICIAL METHOD
                     generation_kwargs = {
@@ -341,11 +404,17 @@ class FluxGenerator:
                     result = self.pipeline(**generation_kwargs)
             
             image = result.images[0]
+            
+            # Clear memory after generation
+            clear_gpu_memory()
+            
             logger.info(f"✅ Image generated successfully ({lora_status})")
             return image
             
         except Exception as e:
             logger.error(f"❌ Generation failed: {e}")
+            # Clear memory on error
+            clear_gpu_memory()
             raise e
     
     def unload_model(self):
@@ -369,7 +438,7 @@ class FluxGenerator:
             self._loaded = False
             self.lora_loaded = False
             
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            # Aggressive memory cleanup
+            clear_gpu_memory()
             
             logger.info("🗑️ Model unloaded")
