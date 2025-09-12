@@ -281,7 +281,6 @@ class FluxGenerator:
                 
                 # Load FLUX pipeline with maximum memory optimization
                 load_kwargs = {
-                    model_info["id"],
                     "torch_dtype": self.memory_optimizations["torch_dtype"],
                     "token": hf_token,
                     "use_safetensors": True,
@@ -292,12 +291,12 @@ class FluxGenerator:
                 # Try to use fp16 variant if available
                 try:
                     load_kwargs["variant"] = "fp16"
-                    self.pipeline = FluxPipeline.from_pretrained(**load_kwargs)
+                    self.pipeline = FluxPipeline.from_pretrained(model_info["id"], **load_kwargs)
                     logger.info("✅ Loaded FP16 variant")
                 except:
                     # Fallback to regular loading
                     load_kwargs.pop("variant", None)
-                    self.pipeline = FluxPipeline.from_pretrained(**load_kwargs)
+                    self.pipeline = FluxPipeline.from_pretrained(model_info["id"], **load_kwargs)
                     logger.info("✅ Loaded regular variant")
                 
                 # Don't manually move to device when using device_map="auto"
@@ -339,7 +338,6 @@ class FluxGenerator:
             # Handle SDXL models
             elif model_info["type"] == "sdxl":
                 load_kwargs = {
-                    model_info["id"],
                     "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
                     "token": hf_token,
                     "safety_checker": None,
@@ -349,7 +347,7 @@ class FluxGenerator:
                     "device_map": "auto"
                 }
                 
-                self.pipeline = StableDiffusionXLPipeline.from_pretrained(**load_kwargs)
+                self.pipeline = StableDiffusionXLPipeline.from_pretrained(model_info["id"], **load_kwargs)
                 
                 # Don't manually move when using device_map
                 logger.info(f"🔧 SDXL loaded with automatic device mapping")
