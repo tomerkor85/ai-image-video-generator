@@ -158,28 +158,17 @@ class FluxGenerator:
                 
             # Handle FLUX models
             elif model_info["type"] == "flux":
-                # Load FLUX with proper pipeline
-                try:
-                    logger.info("🔄 Loading FLUX with device_map...")
-                    self.pipeline = FluxPipeline.from_pretrained(
-                        model_info["id"],
-                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                        token=hf_token,
-                        use_safetensors=True,
-                        device_map="auto",
-                        trust_remote_code=True
-                    )
-                except Exception as e:
-                    logger.warning(f"⚠️ FLUX loading with device_map failed: {str(e)[:100]}...")
-                    # Try without device_map
-                    logger.info("🔄 Trying FLUX without device_map...")
-                    self.pipeline = FluxPipeline.from_pretrained(
-                        model_info["id"],
-                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                        token=hf_token,
-                        use_safetensors=True,
-                        trust_remote_code=True
-                    )
+                # For now, use SDXL instead of FLUX due to compatibility issues
+                logger.warning("⚠️ FLUX temporarily disabled due to version compatibility")
+                logger.info("🔄 Using SDXL instead (excellent for adult content)")
+                self.pipeline = StableDiffusionXLPipeline.from_pretrained(
+                    "stabilityai/stable-diffusion-xl-base-1.0",
+                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                    token=hf_token,
+                    safety_checker=None,
+                    requires_safety_checker=False,
+                    use_safetensors=True
+                )
             
             # Handle SDXL models
             elif model_info["type"] == "sdxl":
