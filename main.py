@@ -86,6 +86,7 @@ wan_generator = None
 class ImageRequest(BaseModel):
     prompt: str = Field(..., description="Text prompt for image generation")
     negative_prompt: str = Field("", description="Negative prompt")
+    model: str = Field("flux_schnell", description="Model to use for generation")
     width: int = Field(1024, ge=512, le=2048, description="Image width")
     height: int = Field(1024, ge=512, le=2048, description="Image height")
     steps: int = Field(25, ge=10, le=50, description="Inference steps")
@@ -168,6 +169,10 @@ async def generate_image(req: ImageRequest, background_tasks: BackgroundTasks):
         
         generator = get_flux_generator()
         
+        # Switch model if requested
+        if req.model != generator.current_model:
+            generator.switch_model(req.model)
+        
         # Load model if needed
         if not generator.is_loaded():
             await generator.load_model()
@@ -199,7 +204,7 @@ async def generate_image(req: ImageRequest, background_tasks: BackgroundTasks):
             "success": True,
             "filename": filename,
             "url": f"/outputs/images/{filename}",
-            "model": "FLUX + LORA",
+            "model": f"{generator.available_models[generator.current_model]['description']} + LORA",
             "settings": {
                 "size": f"{req.width}x{req.height}",
                 "steps": req.steps,
@@ -274,6 +279,15 @@ async def list_outputs():
     return {
         "images": [{"name": f.name, "size": f.stat().st_size, "created": f.stat().st_mtime} for f in sorted(images, reverse=True)[:20]],
         "videos": [{"name": f.name, "size": f.stat().st_size, "created": f.stat().st_mtime} for f in sorted(videos, reverse=True)[:20]]
+    }
+
+@app.get("/models/available")
+async def get_available_models():
+    """Get available models for image generation"""
+    generator = get_flux_generator()
+    return {
+        "models": generator.get_available_models(),
+        "current": generator.current_model
     }
 
 def cleanup_memory():

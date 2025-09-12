@@ -11,32 +11,104 @@ class FluxGenerator:
     def __init__(self):
         self.pipeline = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model_id = "black-forest-labs/FLUX.1-schnell"  # More permissive version
+        
+        # Available uncensored models - you can switch between them
+        self.available_models = {
+            "flux_schnell": {
+                "id": "black-forest-labs/FLUX.1-schnell",
+                "description": "Fast FLUX model with minimal censorship",
+                "type": "huggingface"
+            },
+            "sdxl_base": {
+                "id": "stabilityai/stable-diffusion-xl-base-1.0", 
+                "description": "SDXL base - very permissive",
+                "type": "huggingface"
+            },
+            "realistic_vision": {
+                "id": "SG161222/Realistic_Vision_V6.0_B1_noVAE",
+                "description": "Realistic Vision - popular for adult content",
+                "type": "huggingface"
+            },
+            # CivitAI models (need manual download)
+            "civitai_custom": {
+                "id": "models/civitai_model.safetensors",
+                "description": "Custom CivitAI model (place in models/ folder)",
+                "type": "local"
+            }
+        }
+        
+        # Default model
+        self.current_model = "flux_schnell"
+        self.model_id = self.available_models[self.current_model]["id"]
         self.lora_path = "models/naya2.safetensors"
         self._loaded = False
         
     def is_loaded(self) -> bool:
         """Check if model is loaded"""
         return self._loaded and self.pipeline is not None
+    
+    def switch_model(self, model_key: str):
+        """Switch to a different model"""
+        if model_key in self.available_models:
+            if self.is_loaded():
+                self.unload_model()
+            self.current_model = model_key
+            self.model_id = self.available_models[model_key]["id"]
+            logger.info(f"Switched to model: {self.available_models[model_key]['description']}")
+        else:
+            logger.error(f"Model {model_key} not found in available models")
+    
+    def get_available_models(self):
+        """Get list of available models"""
+        return self.available_models
         
     async def load_model(self):
         """Load FLUX model with LORA - UNCENSORED"""
         try:
             logger.info(f"Loading FLUX model on {self.device}")
+            logger.info(f"Current model: {self.available_models[self.current_model]['description']}")
             
             # Get Hugging Face token
             hf_token = os.environ.get("HUGGINGFACE_TOKEN")
             
-            # Load FLUX model WITHOUT safety checker
-            self.pipeline = FluxPipeline.from_pretrained(
-                self.model_id,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                token=hf_token,
-                safety_checker=None,  # DISABLE SAFETY CHECKER
-                requires_safety_checker=False,  # NO CENSORSHIP
-                use_safetensors=True,
-                trust_remote_code=True  # Allow custom code execution
-            )
+            model_info = self.available_models[self.current_model]
+            
+            if model_info["type"] == "local":
+                # Load local CivitAI model
+                if os.path.exists(self.model_id):
+                    from diffusers import StableDiffusionXLPipeline
+                    self.pipeline = StableDiffusionXLPipeline.from_single_file(
+                        self.model_id,
+                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                        safety_checker=None,
+                        requires_safety_checker=False,
+                        use_safetensors=True
+                    )
+                else:
+                    raise FileNotFoundError(f"Local model not found: {self.model_id}")
+            else:
+                # Load HuggingFace model WITHOUT safety checker
+                if "flux" in self.current_model.lower():
+                    self.pipeline = FluxPipeline.from_pretrained(
+                        self.model_id,
+                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                        token=hf_token,
+                        safety_checker=None,  # DISABLE SAFETY CHECKER
+                        requires_safety_checker=False,  # NO CENSORSHIP
+                        use_safetensors=True,
+                        trust_remote_code=True  # Allow custom code execution
+                    )
+                else:
+                    from diffusers import StableDiffusionXLPipeline
+                    self.pipeline = StableDiffusionXLPipeline.from_pretrained(
+                        self.model_id,
+                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                        token=hf_token,
+                        safety_checker=None,  # DISABLE SAFETY CHECKER
+                        requires_safety_checker=False,  # NO CENSORSHIP
+                        use_safetensors=True,
+                        trust_remote_code=True
+                    )
             
             # Move to device
             self.pipeline = self.pipeline.to(self.device)
