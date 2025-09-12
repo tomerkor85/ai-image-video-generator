@@ -158,26 +158,13 @@ class FluxGenerator:
                 
             # Handle FLUX models
             elif model_info["type"] == "flux":
-                try:
-                    # Try FLUX with specific settings to avoid tokenizer issues
-                    self.pipeline = FluxPipeline.from_pretrained(
-                        model_info["id"],
-                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                        token=hf_token,
-                        use_safetensors=True,
-                        revision="main"
-                    )
-                    logger.info("✅ FLUX loaded successfully!")
-                except Exception as e:
-                    logger.error(f"❌ FLUX loading failed: {e}")
-                    logger.info("🔄 Falling back to SDXL...")
-                    # Fallback to SDXL
-                    self.pipeline = StableDiffusionXLPipeline.from_pretrained(
-                        "stabilityai/stable-diffusion-xl-base-1.0",
-                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                        use_safetensors=True
-                    )
-                    model_info["type"] = "sdxl"  # Update type for LORA loading
+                # Load FLUX with proper pipeline
+                self.pipeline = FluxPipeline.from_pretrained(
+                    model_info["id"],
+                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                    token=hf_token,
+                    use_safetensors=True
+                )
             
             # Handle SDXL models
             elif model_info["type"] == "sdxl":
@@ -185,6 +172,8 @@ class FluxGenerator:
                     model_info["id"],
                     torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                     token=hf_token,
+                    safety_checker=None,
+                    requires_safety_checker=False,
                     use_safetensors=True
                 )
             
@@ -198,48 +187,26 @@ class FluxGenerator:
                 if os.path.exists(lora_path):
                     try:
                         logger.info(f"📥 Loading NAYA2 LORA: {lora_path}")
+                        
+                        # Load LORA based on model type
                         if model_info["type"] == "flux":
                             # FLUX LORA loading
-                            self.pipeline.load_lora_weights(lora_path, adapter_name="naya2")
-                            self.pipeline.set_adapters("naya2")
-                            logger.info("✅ FLUX NAYA2 LORA loaded successfully!")
-                        else:
-                            # SDXL LORA loading - try multiple methods
-                            try:
-                                # Try with PEFT backend
-                                from peft import PeftModel
-                                self.pipeline.unet = PeftModel.from_pretrained(
-                                    self.pipeline.unet, 
-                                    lora_path,
-                                    is_trainable=False
-                                )
-                                logger.info("✅ SDXL NAYA2 LORA loaded successfully!")
-                            except Exception as e1:
-                                logger.warning(f"⚠️ PEFT LORA loading failed: {e1}")
-                                try:
-                                    # Fallback to standard method
-                                    self.pipeline.load_lora_weights(lora_path)
-                                    logger.info("✅ SDXL NAYA2 LORA loaded with standard method!")
-                                except Exception as e2:
-                                    logger.warning(f"⚠️ Standard LORA loading also failed: {e2}")
-                                    try:
-                                        # Final fallback - directory method
-                                        self.pipeline.load_lora_weights(".", weight_name="naya2.safetensors")
-                                        logger.info("✅ SDXL NAYA2 LORA loaded with directory method!")
-                                    except Exception as e3:
-                                        logger.warning(f"⚠️ All LORA loading methods failed: {e3}")
-                                        logger.info("🔄 Continuing with base model...")
-                                        self.lora_loaded = False
-                                        return  # Don't raise error, just continue without LORA
-                        
-                        self.lora_loaded = True
+                            self.pipeline.load_lora_weights("models", weight_name="naya2.safetensors")
+                            logger.info("✅ NAYA2 LORA loaded for FLUX!")
+                            self.lora_loaded = True
+                        elif model_info["type"] == "sdxl":
+                            # SDXL LORA loading
+                            self.pipeline.load_lora_weights("models", weight_name="naya2.safetensors")
+                            logger.info("✅ NAYA2 LORA loaded for SDXL!")
+                            self.lora_loaded = True
                         
                     except Exception as e:
                         logger.warning(f"⚠️ NAYA2 LORA loading failed: {e}")
-                        logger.info("🔄 Continuing with base model...")
+                        logger.info("🔄 Continuing with base model (no LORA)...")
                         self.lora_loaded = False
                 else:
                     logger.warning(f"⚠️ NAYA2 LORA file not found: {lora_path}")
+                    logger.info("💡 To use LORA, place naya2.safetensors in the models/ directory")
             
             # Optimizations
             self.pipeline.enable_attention_slicing()
@@ -303,11 +270,12 @@ class FluxGenerator:
                         "generator": generator,
                     }
                     
-                    # Add LORA scale only if LORA is active
+                    # Add LORA scale for FLUX
                     if effective_lora:
                         generation_kwargs["joint_attention_kwargs"] = {"scale": lora_scale}
                     
                     result = self.pipeline(**generation_kwargs)
+                    
                 else:
                     # SDXL generation
                     generation_kwargs = {
@@ -320,7 +288,7 @@ class FluxGenerator:
                         "generator": generator,
                     }
                     
-                    # Add LORA scale only if LORA is active
+                    # Add LORA scale for SDXL
                     if effective_lora:
                         generation_kwargs["cross_attention_kwargs"] = {"scale": lora_scale}
                     
