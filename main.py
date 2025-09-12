@@ -253,6 +253,11 @@ async def health():
 async def get_memory_status():
     """Get current memory usage"""
     return get_memory_info()
+
+@app.post("/memory/clear")
+async def clear_memory():
+    """Clear GPU memory cache"""
+    if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
         gc.collect()
