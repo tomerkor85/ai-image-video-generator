@@ -145,14 +145,6 @@ class FluxGenerator:
                         trust_remote_code=True
                     )
                     self.current_model = "sdxl_base"
-                    self.model_id,
-                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                    token=hf_token,
-                    safety_checker=None,  # DISABLE SAFETY CHECKER
-                    requires_safety_checker=False,  # NO CENSORSHIP
-                    use_safetensors=True,
-                    trust_remote_code=True
-                )
             else:
                 # Load HuggingFace model WITHOUT safety checker - all as SDXL
                 from diffusers import StableDiffusionXLPipeline
