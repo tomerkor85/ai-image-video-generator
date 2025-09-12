@@ -207,11 +207,11 @@ class FluxGenerator:
                     token=hf_token,
                     use_safetensors=True,
                     low_cpu_mem_usage=self.memory_optimizations["low_cpu_mem_usage"],
-                    device_map="balanced"  # Automatic device mapping
                 )
                 
-                # Don't move to device manually - let device_map handle it
-                logger.info("🔧 Model loaded with automatic device mapping")
+                # Move to device manually since we're not using device_map
+                self.pipeline = self.pipeline.to(self.device)
+                logger.info(f"🔧 Model moved to {self.device}")
                 
                 # Enable ALL memory optimizations for FLUX
                 logger.info("🔧 Enabling memory optimizations...")
