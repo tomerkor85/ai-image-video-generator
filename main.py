@@ -13,6 +13,10 @@ from typing import Optional, List
 from datetime import datetime
 import asyncio
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -59,11 +63,15 @@ def setup_huggingface_token():
     """Setup Hugging Face token from various sources"""
     token = None
     
-    # Method 1: Environment variable (most secure)
-    token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")
+    # Method 1: Environment variable from .env file or system
+    token = (
+        os.environ.get("HUGGINGFACE_TOKEN") or 
+        os.environ.get("HF_TOKEN") or
+        os.environ.get("HUGGING_FACE_TOKEN")
+    )
     
     if token:
-        logger.info("✅ Hugging Face token loaded from environment variable")
+        logger.info("✅ Hugging Face token loaded from environment (.env file or system)")
         return token
     
     # Method 2: Check for token file
@@ -632,6 +640,19 @@ async def serve_ui():
             <p>This tool is designed for professional adult content creation. Use responsibly.</p>
         </div>
         
+        <!-- HF Token Setup -->
+        <div id="token-setup" class="tab-content" style="display: none; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
+            <h3>🔑 Setup Hugging Face Token</h3>
+            <p>Enter your Hugging Face token to access models:</p>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <input type="password" id="hf-token-input" placeholder="hf_your_token_here" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+                <button onclick="setupToken()" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer;">Save Token</button>
+            </div>
+            <p style="margin-top: 10px; font-size: 12px; color: #666;">
+                Get your token from: <a href="https://huggingface.co/settings/tokens" target="_blank">huggingface.co/settings/tokens</a>
+            </p>
+        </div>
+        
         <div class="tabs">
             <div class="tab active" onclick="switchTab('image')">
                 🎨 Image Generation (FLUX)
@@ -970,6 +991,43 @@ async def serve_ui():
         
         // Auto-refresh gallery every 30 seconds
         setInterval(loadGallery, 30000);
+        
+        // Setup token function
+        async function setupToken() {
+            const token = document.getElementById('hf-token-input').value;
+            if (!token) {
+                alert('Please enter a token');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/setup/hf-token', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(token)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    alert('✅ Token saved successfully!');
+                    document.getElementById('token-setup').style.display = 'none';
+                    location.reload();
+                } else {
+                    alert('❌ Error: ' + result.message);
+                }
+            } catch (err) {
+                alert('❌ Error saving token: ' + err.message);
+            }
+        }
+        
+        // Check if token is needed
+        fetch('/')
+            .then(r => r.json())
+            .then(data => {
+                if (data.huggingface_status.includes('❌')) {
+                    document.getElementById('token-setup').style.display = 'block';
+                }
+            });
     </script>
 </body>
 </html>
