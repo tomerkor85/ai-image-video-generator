@@ -41,7 +41,7 @@ class FluxGenerator:
                 "type": "sdxl",
                 "requires_token": False,
                 "supports_lora": True,
-                "lora_path": "models/sdxl_lora.safetensors",
+                "lora_path": "models/naya2.safetensors",
                 "pipeline_class": "StableDiffusionXLPipeline"
             },
             "realistic_vision": {
@@ -50,7 +50,7 @@ class FluxGenerator:
                 "type": "sdxl",
                 "requires_token": False,
                 "supports_lora": True,
-                "lora_path": "models/realistic_lora.safetensors",
+                "lora_path": "models/naya2.safetensors",
                 "pipeline_class": "StableDiffusionXLPipeline"
             },
             "civitai_custom": {
@@ -59,7 +59,7 @@ class FluxGenerator:
                 "type": "civitai",
                 "requires_token": False,
                 "supports_lora": True,
-                "lora_path": "models/civitai_lora.safetensors",
+                "lora_path": "models/naya2.safetensors",
                 "pipeline_class": "StableDiffusionXLPipeline"
             }
         }
@@ -116,33 +116,6 @@ class FluxGenerator:
             logger.error(f"❌ Failed to download CivitAI model: {e}")
             raise e
     
-    async def download_lora(self, model_type: str):
-        """Download appropriate LORA for model type"""
-        try:
-            hf_token = os.environ.get("HUGGINGFACE_TOKEN")
-            
-            if model_type == "flux" or model_type == "sdxl":
-                # Download NAYA2 LORA for FLUX
-                lora_path = "models/naya2.safetensors"
-                if not os.path.exists(lora_path):
-                    logger.info(f"📥 Downloading NAYA2 LORA for {model_type.upper()}...")
-                    os.makedirs("models", exist_ok=True)
-                    downloaded_path = hf_hub_download(
-                        repo_id="tomerkor1985/test",
-                        filename="naya2.safetensors",
-                        token=hf_token,
-                        local_dir="models",
-                        local_dir_use_symlinks=False
-                    )
-                    logger.info(f"✅ NAYA2 LORA downloaded: {lora_path}")
-                else:
-                    logger.info(f"✅ NAYA2 LORA already exists: {lora_path}")
-                return lora_path
-                
-        except Exception as e:
-            logger.warning(f"⚠️ Could not download LORA: {e}")
-            return None
-    
     def switch_model(self, model_key: str, civitai_url: str = None):
         """Switch to different model"""
         if model_key in self.available_models:
@@ -185,7 +158,7 @@ class FluxGenerator:
             # Handle FLUX models
             elif model_info["type"] == "flux":
                 try:
-                    # Try with specific revision to avoid tokenizer issues
+                    # Try FLUX with specific settings to avoid tokenizer issues
                     self.pipeline = FluxPipeline.from_pretrained(
                         model_info["id"],
                         torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
@@ -193,6 +166,7 @@ class FluxGenerator:
                         use_safetensors=True,
                         revision="main"
                     )
+                    logger.info("✅ FLUX loaded successfully!")
                 except Exception as e:
                     logger.error(f"❌ FLUX loading failed: {e}")
                     logger.info("🔄 Falling back to SDXL...")
@@ -200,8 +174,6 @@ class FluxGenerator:
                     self.pipeline = StableDiffusionXLPipeline.from_pretrained(
                         "stabilityai/stable-diffusion-xl-base-1.0",
                         torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                        safety_checker=None,
-                        requires_safety_checker=False,
                         use_safetensors=True
                     )
                     model_info["type"] = "sdxl"  # Update type for LORA loading
@@ -212,45 +184,46 @@ class FluxGenerator:
                     model_info["id"],
                     torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                     token=hf_token,
-                    safety_checker=None,
-                    requires_safety_checker=False,
-                    use_safetensors=True,
-                    trust_remote_code=True
+                    use_safetensors=True
                 )
             
             # Move to device
             self.pipeline = self.pipeline.to(self.device)
             
-            # Load LORA if supported
+            # Load NAYA2 LORA if supported and exists
             self.lora_loaded = False
             if model_info["supports_lora"]:
-                lora_path = await self.download_lora(model_info["type"])
-                if lora_path and os.path.exists(lora_path):
+                lora_path = "models/naya2.safetensors"
+                if os.path.exists(lora_path):
                     try:
-                        logger.info(f"📥 Loading LORA: {lora_path}")
+                        logger.info(f"📥 Loading NAYA2 LORA: {lora_path}")
                         if model_info["type"] == "flux":
                             # FLUX LORA loading
                             self.pipeline.load_lora_weights(lora_path, adapter_name="naya2")
                             self.pipeline.set_adapters("naya2")
+                            logger.info("✅ FLUX NAYA2 LORA loaded successfully!")
                         else:
-                            # SDXL LORA loading
-                            self.pipeline.load_lora_weights(lora_path)
-                        self.lora_loaded = True
-                        logger.info("✅ LORA loaded successfully!")
-                    except Exception as e:
-                        logger.warning(f"⚠️ LORA loading failed: {e}")
-                        # Try alternative LORA loading for SDXL
-                        if model_info["type"] == "sdxl":
+                            # SDXL LORA loading - try multiple methods
                             try:
-                                logger.info("🔄 Trying alternative LORA loading...")
-                                from diffusers import LoraLoaderMixin
-                                self.pipeline.load_lora_weights(".", weight_name=os.path.basename(lora_path))
-                                self.lora_loaded = True
-                                logger.info("✅ LORA loaded with alternative method!")
-                            except Exception as e2:
-                                logger.warning(f"⚠️ Alternative LORA loading also failed: {e2}")
+                                self.pipeline.load_lora_weights(lora_path)
+                                logger.info("✅ SDXL NAYA2 LORA loaded successfully!")
+                            except Exception as e1:
+                                logger.warning(f"⚠️ Standard LORA loading failed: {e1}")
+                                try:
+                                    # Alternative method
+                                    self.pipeline.load_lora_weights(".", weight_name="naya2.safetensors")
+                                    logger.info("✅ SDXL NAYA2 LORA loaded with alternative method!")
+                                except Exception as e2:
+                                    logger.warning(f"⚠️ Alternative LORA loading failed: {e2}")
+                                    raise e2
+                        
+                        self.lora_loaded = True
+                        
+                    except Exception as e:
+                        logger.warning(f"⚠️ NAYA2 LORA loading failed: {e}")
+                        self.lora_loaded = False
                 else:
-                    logger.warning(f"⚠️ LORA file not found: {lora_path}")
+                    logger.warning(f"⚠️ NAYA2 LORA file not found: {lora_path}")
             
             # Optimizations
             self.pipeline.enable_attention_slicing()
@@ -264,7 +237,7 @@ class FluxGenerator:
                 logger.info("⚠️ XFormers not available")
             
             self._loaded = True
-            lora_status = "with LORA" if self.lora_loaded else "base model"
+            lora_status = "with NAYA2 LORA" if self.lora_loaded else "base model"
             logger.info(f"✅ Model loaded successfully ({lora_status})")
             
         except Exception as e:
@@ -297,50 +270,9 @@ class FluxGenerator:
             
             # Handle LORA usage
             effective_lora = use_lora and self.lora_loaded
-            lora_status = "with LORA" if effective_lora else "base model"
+            lora_status = "with NAYA2 LORA" if effective_lora else "base model"
             
             logger.info(f"🎨 Generating ({lora_status}): {prompt[:50]}...")
-            
-            # Handle LORA enable/disable
-            if model_info["type"] == "flux":
-                # FLUX LORA handling
-                if effective_lora:
-                    try:
-                        self.pipeline.set_adapters("naya2")
-                        logger.info("🔧 FLUX LORA enabled")
-                    except:
-                        effective_lora = False
-                        logger.warning("⚠️ Failed to enable FLUX LORA")
-                else:
-                    try:
-                        self.pipeline.set_adapters([])  # Disable all adapters
-                        logger.info("🔧 FLUX LORA disabled")
-                    except:
-                        pass
-            else:
-                # SDXL LORA handling
-                if not use_lora and self.lora_loaded:
-                    try:
-                        self.pipeline.unload_lora_weights()
-                        logger.info("🔧 SDXL LORA temporarily disabled")
-                    except:
-                        pass
-                try:
-                    self.pipeline.unload_lora_weights()
-                    logger.info("🔧 LORA temporarily disabled")
-                except:
-                    pass
-            elif use_lora and not self.lora_loaded and model_info["supports_lora"]:
-                # Try to reload LORA
-                lora_path = await self.download_lora(model_info["type"])
-                if lora_path and os.path.exists(lora_path):
-                    try:
-                        self.pipeline.load_lora_weights(lora_path)
-                        self.lora_loaded = True
-                        effective_lora = True
-                        logger.info("✅ LORA reloaded")
-                    except:
-                        pass
             
             # Generate based on model type
             with torch.no_grad():
@@ -359,9 +291,7 @@ class FluxGenerator:
                     if effective_lora:
                         generation_kwargs["joint_attention_kwargs"] = {"scale": lora_scale}
                     
-                    result = self.pipeline(
-                        **generation_kwargs
-                    )
+                    result = self.pipeline(**generation_kwargs)
                 else:
                     # SDXL generation
                     generation_kwargs = {
@@ -378,9 +308,7 @@ class FluxGenerator:
                     if effective_lora:
                         generation_kwargs["cross_attention_kwargs"] = {"scale": lora_scale}
                     
-                    result = self.pipeline(
-                        **generation_kwargs
-                    )
+                    result = self.pipeline(**generation_kwargs)
             
             image = result.images[0]
             logger.info(f"✅ Image generated successfully ({lora_status})")
