@@ -5,9 +5,10 @@ torchvision==0.16.0+cu118
 torchaudio==2.1.0+cu118
 transformers==4.36.2
 diffusers==0.30.0
-accelerate==0.25.0
+accelerate==0.34.0
 peft==0.7.1
 safetensors==0.4.1
+tokenizers==0.19.1
 
 # Image/Video Processing
 Pillow==10.1.0
