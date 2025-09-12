@@ -137,6 +137,8 @@ class ImageRequest(BaseModel):
     guidance: float = Field(7.5, ge=1.0, le=20.0, description="Guidance scale")
     seed: Optional[int] = Field(None, description="Random seed")
     lora_scale: float = Field(1.0, ge=0.0, le=2.0, description="LORA strength")
+    num_images: int = Field(1, ge=1, le=8, description="Number of images to generate")
+    use_lora: bool = Field(True, description="Whether to use LORA")
 
 class VideoRequest(BaseModel):
     prompt: str = Field(..., description="Text prompt for video generation")
@@ -148,6 +150,8 @@ class VideoRequest(BaseModel):
     guidance: float = Field(7.5, ge=1.0, le=20.0, description="Guidance scale")
     seed: Optional[int] = Field(None, description="Random seed")
     fps: int = Field(8, ge=4, le=30, description="Frames per second")
+    duration: float = Field(2.0, ge=0.5, le=10.0, description="Video duration in seconds")
+    use_lora: bool = Field(True, description="Whether to use LORA")
 
 def get_flux_generator():
     """Get or create FLUX generator"""
@@ -225,39 +229,54 @@ async def generate_image(req: ImageRequest, background_tasks: BackgroundTasks):
         if not generator.is_loaded():
             await generator.load_model()
         
-        # Generate image
-        image = await generator.generate(
-            prompt=req.prompt,
-            negative_prompt=req.negative_prompt,
-            width=req.width,
-            height=req.height,
-            num_inference_steps=req.steps,
-            guidance_scale=req.guidance,
-            seed=req.seed,
-            lora_scale=req.lora_scale
-        )
+        # Generate multiple images
+        images = []
+        filenames = []
         
-        # Save image
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"flux_{timestamp}.png"
-        filepath = OUTPUT_DIR / "images" / filename
+        for i in range(req.num_images):
+            # Use different seed for each image if seed is provided
+            current_seed = req.seed + i if req.seed is not None else None
+            
+            image = await generator.generate(
+                prompt=req.prompt,
+                negative_prompt=req.negative_prompt,
+                width=req.width,
+                height=req.height,
+                num_inference_steps=req.steps,
+                guidance_scale=req.guidance,
+                seed=current_seed,
+                lora_scale=req.lora_scale if req.use_lora else 0.0,
+                use_lora=req.use_lora
+            )
+            
+            # Save image
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"flux_{timestamp}_{i+1}.png"
+            filepath = OUTPUT_DIR / "images" / filename
+            
+            image.save(filepath, quality=95)
+            images.append(image)
+            filenames.append(filename)
+            
+            logger.info(f"✅ Image {i+1}/{req.num_images} saved: {filename}")
         
-        image.save(filepath, quality=95)
-        logger.info(f"✅ Image saved: {filename}")
+        logger.info(f"✅ All {req.num_images} images generated successfully!")
         
         # Cleanup
         background_tasks.add_task(cleanup_memory)
         
         return {
             "success": True,
-            "filename": filename,
-            "url": f"/outputs/images/{filename}",
+            "count": req.num_images,
+            "filenames": filenames,
+            "urls": [f"/outputs/images/{fn}" for fn in filenames],
             "model": f"{generator.available_models[generator.current_model]['description']} + LORA",
             "settings": {
                 "size": f"{req.width}x{req.height}",
                 "steps": req.steps,
                 "guidance": req.guidance,
-                "lora_scale": req.lora_scale
+                "lora_scale": req.lora_scale if req.use_lora else "disabled",
+                "use_lora": req.use_lora
             }
         }
         
@@ -271,6 +290,10 @@ async def generate_video(req: VideoRequest, background_tasks: BackgroundTasks):
     try:
         logger.info(f"🎬 Generating video: {req.prompt[:50]}...")
         
+        # Calculate frames from duration and FPS
+        calculated_frames = int(req.duration * req.fps)
+        actual_frames = min(max(calculated_frames, 8), 32)  # Clamp between 8-32
+        
         generator = get_wan_generator()
         
         # Load model if needed
@@ -283,10 +306,12 @@ async def generate_video(req: VideoRequest, background_tasks: BackgroundTasks):
             negative_prompt=req.negative_prompt,
             width=req.width,
             height=req.height,
-            num_frames=req.num_frames,
+            num_frames=actual_frames,
             num_inference_steps=req.steps,
             guidance_scale=req.guidance,
-            seed=req.seed
+            seed=req.seed,
+            lora_scale=1.0 if req.use_lora else 0.0,
+            use_lora=req.use_lora
         )
         
         # Save video
@@ -307,10 +332,12 @@ async def generate_video(req: VideoRequest, background_tasks: BackgroundTasks):
             "model": "WAN2.2",
             "settings": {
                 "size": f"{req.width}x{req.height}",
-                "frames": req.num_frames,
+                "frames": actual_frames,
+                "duration": f"{req.duration}s",
                 "fps": req.fps,
                 "steps": req.steps,
-                "guidance": req.guidance
+                "guidance": req.guidance,
+                "use_lora": req.use_lora
             }
         }
         
@@ -339,9 +366,13 @@ async def get_available_models():
     }
 
 @app.post("/setup/hf-token")
-async def setup_hf_token(token: str):
+async def setup_hf_token(request: dict):
     """Setup Hugging Face token"""
     try:
+        token = request.get("token") or request.get("hf_token")
+        if not token:
+            raise HTTPException(status_code=400, detail="Token is required")
+        
         # Validate token format (basic check)
         if not token.startswith("hf_") or len(token) < 20:
             raise HTTPException(status_code=400, detail="Invalid token format")
@@ -668,6 +699,19 @@ async def serve_ui():
                 <div class="form-grid">
                     <div>
                         <div class="form-group">
+                            <label>🤖 Model Selection</label>
+                            <select id="image-model">
+                                <option value="flux_dev" selected>FLUX.1-dev + NAYA2 LORA - Best quality</option>
+                                <option value="flux_schnell">FLUX.1-schnell - Fast generation</option>
+                                <option value="sdxl_base">SDXL Base - Very permissive</option>
+                                <option value="realistic_vision">Realistic Vision V6 - Best for photorealistic</option>
+                                <option value="dreamshaper">DreamShaper - Versatile styles</option>
+                                <option value="deliberate">Deliberate - Detailed content</option>
+                                <option value="civitai_custom">Custom CivitAI Model</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
                             <label>🎯 Prompt</label>
                             <textarea id="image-prompt" placeholder="Describe your image in detail..." required>a beautiful woman, professional photography, high quality, detailed</textarea>
                         </div>
@@ -680,6 +724,16 @@ async def serve_ui():
                     
                     <div>
                         <div class="settings-grid">
+                            <div class="form-group">
+                                <label>🔢 Number of Images</label>
+                                <select id="image-count">
+                                    <option value="1" selected>1 image</option>
+                                    <option value="2">2 images</option>
+                                    <option value="4">4 images</option>
+                                    <option value="8">8 images</option>
+                                </select>
+                            </div>
+                            
                             <div class="form-group">
                                 <label>📐 Width</label>
                                 <select id="image-width">
@@ -719,6 +773,20 @@ async def serve_ui():
                                 <label>🎲 Seed (Optional)</label>
                                 <input type="number" id="image-seed" placeholder="Random">
                             </div>
+                            
+                            <div class="form-group">
+                                <label>🔧 Use LORA</label>
+                                <select id="image-use-lora">
+                                    <option value="true" selected>Yes (Enhanced)</option>
+                                    <option value="false">No (Base Model)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                                <label>🎲 Seed (Optional)</label>
+                                <input type="number" id="image-seed" placeholder="Random">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -751,6 +819,20 @@ async def serve_ui():
                     <div>
                         <div class="settings-grid">
                             <div class="form-group">
+                                <label>⏱️ Duration</label>
+                                <select id="video-duration">
+                                    <option value="0.5">0.5 seconds</option>
+                                    <option value="1">1 second</option>
+                                    <option value="2" selected>2 seconds</option>
+                                    <option value="3">3 seconds</option>
+                                    <option value="4">4 seconds</option>
+                                    <option value="5">5 seconds</option>
+                                    <option value="8">8 seconds</option>
+                                    <option value="10">10 seconds</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
                                 <label>📐 Width</label>
                                 <select id="video-width">
                                     <option value="256">256px</option>
@@ -771,16 +853,6 @@ async def serve_ui():
                             </div>
                             
                             <div class="form-group">
-                                <label>🎞️ Frames</label>
-                                <select id="video-frames">
-                                    <option value="8">8 frames</option>
-                                    <option value="16" selected>16 frames</option>
-                                    <option value="24">24 frames</option>
-                                    <option value="32">32 frames</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group">
                                 <label>⚡ Steps</label>
                                 <input type="number" id="video-steps" value="25" min="10" max="50">
                             </div>
@@ -797,6 +869,14 @@ async def serve_ui():
                                     <option value="8" selected>8 FPS</option>
                                     <option value="12">12 FPS</option>
                                     <option value="24">24 FPS</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>🔧 Use LORA</label>
+                                <select id="video-use-lora">
+                                    <option value="true" selected>Yes (Enhanced)</option>
+                                    <option value="false">No (Base Model)</option>
                                 </select>
                             </div>
                         </div>
@@ -845,18 +925,21 @@ async def serve_ui():
             const data = {
                 prompt: document.getElementById('image-prompt').value,
                 negative_prompt: document.getElementById('image-negative').value,
+                model: document.getElementById('image-model').value,
+                num_images: parseInt(document.getElementById('image-count').value),
                 width: parseInt(document.getElementById('image-width').value),
                 height: parseInt(document.getElementById('image-height').value),
                 steps: parseInt(document.getElementById('image-steps').value),
                 guidance: parseFloat(document.getElementById('image-guidance').value),
                 lora_scale: parseFloat(document.getElementById('image-lora').value),
-                seed: document.getElementById('image-seed').value ? parseInt(document.getElementById('image-seed').value) : null
+                seed: document.getElementById('image-seed').value ? parseInt(document.getElementById('image-seed').value) : null,
+                use_lora: document.getElementById('image-use-lora').value === 'true'
             };
             
             btn.disabled = true;
-            btn.textContent = '🔄 Generating...';
+            btn.textContent = `🔄 Generating ${data.num_images} image(s)...`;
             status.className = 'status show info';
-            status.textContent = '🎨 Creating your image... This may take 30-60 seconds.';
+            status.textContent = `🎨 Creating ${data.num_images} image(s)... This may take ${data.num_images * 30}-${data.num_images * 60} seconds.`;
             result.innerHTML = '';
             
             try {
@@ -870,13 +953,25 @@ async def serve_ui():
                 
                 if (res.success) {
                     status.className = 'status show success';
-                    status.textContent = '✅ Image generated successfully!';
+                    status.textContent = `✅ ${res.count} image(s) generated successfully!`;
+                    
+                    let imagesHtml = '';
+                    res.urls.forEach((url, index) => {
+                        imagesHtml += `
+                            <div style="display: inline-block; margin: 10px;">
+                                <img src="${url}" alt="Generated Image ${index + 1}" onclick="window.open('${url}')" style="max-width: 300px; cursor: pointer; border-radius: 10px;">
+                                <p style="text-align: center; margin-top: 5px; font-size: 12px; color: #666;">${res.filenames[index]}</p>
+                            </div>
+                        `;
+                    });
+                    
                     result.innerHTML = `
-                        <img src="${res.url}" alt="Generated Image" onclick="window.open('${res.url}')">
-                        <p style="margin-top: 15px; color: #666;">
-                            <strong>${res.filename}</strong><br>
-                            Model: ${res.model} | Size: ${res.settings.size} | Steps: ${res.settings.steps}
-                        </p>
+                        <div style="text-align: center;">
+                            ${imagesHtml}
+                            <p style="margin-top: 15px; color: #666;">
+                                Model: ${res.model} | Size: ${res.settings.size} | Steps: ${res.settings.steps} | LORA: ${res.settings.use_lora ? 'Enabled' : 'Disabled'}
+                            </p>
+                        </div>
                     `;
                     loadGallery();
                 } else {
@@ -902,18 +997,19 @@ async def serve_ui():
             const data = {
                 prompt: document.getElementById('video-prompt').value,
                 negative_prompt: document.getElementById('video-negative').value,
+                duration: parseFloat(document.getElementById('video-duration').value),
                 width: parseInt(document.getElementById('video-width').value),
                 height: parseInt(document.getElementById('video-height').value),
-                num_frames: parseInt(document.getElementById('video-frames').value),
                 steps: parseInt(document.getElementById('video-steps').value),
                 guidance: parseFloat(document.getElementById('video-guidance').value),
-                fps: parseInt(document.getElementById('video-fps').value)
+                fps: parseInt(document.getElementById('video-fps').value),
+                use_lora: document.getElementById('video-use-lora').value === 'true'
             };
             
             btn.disabled = true;
             btn.textContent = '🔄 Generating...';
             status.className = 'status show info';
-            status.textContent = '🎬 Creating your video... This may take 2-5 minutes.';
+            status.textContent = `🎬 Creating ${data.duration}s video... This may take 2-5 minutes.`;
             result.innerHTML = '';
             
             try {
@@ -934,7 +1030,7 @@ async def serve_ui():
                         </video>
                         <p style="margin-top: 15px; color: #666;">
                             <strong>${res.filename}</strong><br>
-                            Model: ${res.model} | Size: ${res.settings.size} | Frames: ${res.settings.frames} | FPS: ${res.settings.fps}
+                            Model: ${res.model} | Size: ${res.settings.size} | Duration: ${res.settings.duration} | FPS: ${res.settings.fps} | LORA: ${res.settings.use_lora ? 'Enabled' : 'Disabled'}
                         </p>
                     `;
                     loadGallery();
@@ -1004,7 +1100,7 @@ async def serve_ui():
                 const response = await fetch('/setup/hf-token', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(token)
+                    body: JSON.stringify({token: token})
                 });
                 
                 const result = await response.json();

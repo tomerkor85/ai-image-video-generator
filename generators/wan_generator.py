@@ -1,6 +1,6 @@
 import torch
 import logging
-from diffusers import StableVideoDiffusionPipeline
+from diffusers import StableVideoDiffusionPipeline, DiffusionPipeline
 from PIL import Image
 import numpy as np
 import cv2
@@ -15,8 +15,11 @@ class WanGenerator:
         self.pipeline = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model_id = "stabilityai/stable-video-diffusion-img2vid-xt"
-        self.lora_high_path = "models/lora_t2v_A14B_separate_high.safetensors"
-        self.lora_low_path = "models/lora_t2v_A14B_separate_low.safetensors"
+        self.lora_paths = {
+            "high_noise": "models/lora_t2v_A14B_separate_high.safetensors",
+            "low_noise": "models/lora_t2v_A14B_separate_low.safetensors",
+            "naya_wan": "models/naya_wan_lora.safetensors"
+        }
         self._loaded = False
         
     def is_loaded(self) -> bool:
@@ -28,39 +31,64 @@ class WanGenerator:
         try:
             logger.info(f"Loading WAN2.2 model on {self.device}")
             
-            # Load WAN model WITHOUT safety checker
-            self.pipeline = StableVideoDiffusionPipeline.from_pretrained(
+            # Get Hugging Face token
+            hf_token = (
+                os.environ.get("HUGGINGFACE_TOKEN") or 
+                os.environ.get("HF_TOKEN") or
+                None
+            )
+            
+            # Load WAN model WITHOUT safety checker - using DiffusionPipeline for LORA support
+            self.pipeline = DiffusionPipeline.from_pretrained(
                 self.model_id,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                token=hf_token,
                 safety_checker=None,  # DISABLE SAFETY CHECKER
                 requires_safety_checker=False,  # NO CENSORSHIP
-                use_safetensors=True
+                use_safetensors=True,
+                trust_remote_code=True
             )
             
             # Move to device
             self.pipeline = self.pipeline.to(self.device)
             
-            # Try to load LORA (prefer high noise)
+            # Try to load LORA - now supported!
             lora_loaded = False
-            if os.path.exists(self.lora_high_path):
-                logger.info(f"Loading HIGH noise LORA from {self.lora_high_path}")
-                self.pipeline.load_lora_weights(self.lora_high_path)
-                lora_loaded = True
-            elif os.path.exists(self.lora_low_path):
-                logger.info(f"Loading LOW noise LORA from {self.lora_low_path}")
-                self.pipeline.load_lora_weights(self.lora_low_path)
-                lora_loaded = True
+            
+            # Try to load WAN LORAs in order of preference
+            for lora_name, lora_path in self.lora_paths.items():
+                if os.path.exists(lora_path):
+                    try:
+                        logger.info(f"Loading WAN LORA: {lora_name} from {lora_path}")
+                        self.pipeline.load_lora_weights(lora_path)
+                        logger.info(f"✅ WAN LORA loaded successfully: {lora_name}")
+                        lora_loaded = True
+                        break
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not load LORA {lora_name}: {e}")
+                        continue
             
             if not lora_loaded:
-                logger.warning("No LORA files found, using base model")
+                logger.warning("⚠️ No WAN LORA found - using base model")
+                logger.info("💡 Place LORA files in models/ directory:")
+                for name, path in self.lora_paths.items():
+                    logger.info(f"   {name}: {path}")
             
             # Enable memory optimizations
             self.pipeline.enable_attention_slicing()
             if self.device == "cuda":
                 self.pipeline.enable_model_cpu_offload()
             
+            # Try to enable xformers for better performance
+            try:
+                self.pipeline.enable_xformers_memory_efficient_attention()
+                logger.info("XFormers enabled for WAN2.2")
+            except:
+                logger.info("XFormers not available for WAN2.2")
+            
             self._loaded = True
-            logger.info("WAN2.2 model loaded successfully - UNCENSORED MODE")
+            lora_status = "with LORA" if lora_loaded else "base model"
+            logger.info(f"WAN2.2 model loaded successfully - UNCENSORED MODE ({lora_status})")
             
         except Exception as e:
             logger.error(f"Error loading WAN model: {e}")
@@ -75,7 +103,9 @@ class WanGenerator:
         num_frames: int = 16,
         num_inference_steps: int = 25,
         guidance_scale: float = 7.5,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        lora_scale: float = 1.0,
+        use_lora: bool = True
     ) -> List[Image.Image]:
         """Generate uncensored video frames with WAN2.2"""
         try:
@@ -87,22 +117,52 @@ class WanGenerator:
             if seed is not None:
                 generator = torch.Generator(device=self.device).manual_seed(seed)
             
-            logger.info(f"Generating uncensored video: {prompt[:100]}...")
+            lora_status = "with LORA" if use_lora else "without LORA"
+            logger.info(f"Generating uncensored video {lora_status}: {prompt[:100]}...")
+            
+            # Handle LORA usage
+            if not use_lora and hasattr(self.pipeline, 'unload_lora_weights'):
+                try:
+                    self.pipeline.unload_lora_weights()
+                except:
+                    pass
             
             # Create base image from prompt (simple approach)
             base_image = self._create_base_image(width, height, prompt)
             
             # Generate video frames WITHOUT content filtering
             with torch.no_grad():
-                result = self.pipeline(
-                    image=base_image,
-                    decode_chunk_size=8,
-                    num_frames=num_frames,
-                    num_inference_steps=num_inference_steps,
-                    guidance_scale=guidance_scale,
-                    generator=generator,
-                    # NO SAFETY CHECKER - UNCENSORED
-                )
+                # Check if pipeline supports image input (SVD) or text input (newer models)
+                if hasattr(self.pipeline, '__call__'):
+                    try:
+                        # Try text-to-video first (newer WAN models)
+                        result = self.pipeline(
+                            prompt=prompt,
+                            negative_prompt=negative_prompt,
+                            height=height,
+                            width=width,
+                            num_frames=num_frames,
+                            num_inference_steps=num_inference_steps,
+                            guidance_scale=guidance_scale,
+                            generator=generator,
+                            cross_attention_kwargs={"scale": lora_scale} if use_lora else None,
+                            # NO SAFETY CHECKER - UNCENSORED
+                        )
+                    except Exception as e:
+                        logger.info("Text-to-video failed, trying image-to-video...")
+                        # Fallback to image-to-video
+                        result = self.pipeline(
+                            image=base_image,
+                            decode_chunk_size=8,
+                            num_frames=num_frames,
+                            num_inference_steps=num_inference_steps,
+                            guidance_scale=guidance_scale,
+                            generator=generator,
+                            cross_attention_kwargs={"scale": lora_scale} if use_lora else None,
+                            # NO SAFETY CHECKER - UNCENSORED
+                        )
+                else:
+                    raise RuntimeError("Pipeline not properly loaded")
             
             frames = result.frames[0]
             
@@ -116,7 +176,7 @@ class WanGenerator:
                 pil_image = Image.fromarray(frame)
                 pil_frames.append(pil_image)
             
-            logger.info(f"Uncensored video generated: {len(pil_frames)} frames")
+            logger.info(f"Uncensored video generated {lora_status}: {len(pil_frames)} frames")
             return pil_frames
             
         except Exception as e:
