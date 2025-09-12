@@ -384,14 +384,8 @@ class FluxGenerator:
                     "offload_folder": self.memory_optimizations["offload_folder"]
                 }
                 
-                self.pipeline = StableDiffusionXLPipeline.from_pretrained(
-                    model_info["id"],
-                    **load_kwargs
-                )
-                    model_info["id"],
-                    **load_kwargs
-                )
-                
+                self.pipeline = StableDiffusionXLPipeline.from_pretrained(model_info["id"], **load_kwargs)
+
                 # Don't manually move when using device_map
                 logger.info(f"🔧 SDXL loaded with automatic device mapping")
                 
