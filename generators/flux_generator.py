@@ -310,7 +310,6 @@ class FluxGenerator:
                 
                 # Load FLUX pipeline with maximum memory optimization
                 load_kwargs = {
-                    model_info["id"],
                     "torch_dtype": self.memory_optimizations["torch_dtype"],
                     "token": hf_token,
                     "use_safetensors": True,
@@ -372,10 +371,8 @@ class FluxGenerator:
                 final_memory = get_memory_info()
                 logger.info(f"🔧 Final memory: {final_memory['gpu_free_gb']:.1f}GB free")
                 
-            # Handle SDXL models
-            elif model_info["type"] == "sdxl":
+            if model_info["type"] == "sdxl":
                 load_kwargs = {
-                    model_info["id"],
                     "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
                     "token": hf_token,
                     "safety_checker": None,
@@ -386,6 +383,11 @@ class FluxGenerator:
                     "max_memory": self.memory_optimizations["max_memory"],
                     "offload_folder": self.memory_optimizations["offload_folder"]
                 }
+                
+                self.pipeline = StableDiffusionXLPipeline.from_pretrained(
+                    model_info["id"],
+                    **load_kwargs
+            )
                 
                 self.pipeline = StableDiffusionXLPipeline.from_pretrained(**load_kwargs)
                 
