@@ -212,6 +212,7 @@ app = FastAPI(
     description="Professional AI Image & Video Generation for Adults - No Censorship",
     lifespan=lifespan
 )
+
 @app.get("/")
 async def root():
     """API information"""
@@ -435,11 +436,6 @@ async def list_outputs():
             "images": [],
             "videos": []
         }
-    
-    return {
-        "images": [{"name": f.name, "size": f.stat().st_size, "created": f.stat().st_mtime} for f in sorted(images, reverse=True)[:20]],
-        "videos": [{"name": f.name, "size": f.stat().st_size, "created": f.stat().st_mtime} for f in sorted(videos, reverse=True)[:20]]
-    }
 
 @app.get("/models/available")
 async def get_available_models():
@@ -515,6 +511,8 @@ def cleanup_memory():
         "message": "GPU memory cleared aggressively",
         "memory_status": memory_info
     }
+
+@app.get("/ui", response_class=HTMLResponse)
 async def serve_ui():
     """Serve advanced web UI"""
     return """
